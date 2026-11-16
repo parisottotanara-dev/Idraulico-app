@@ -192,3 +192,12 @@ body.kb #tabs, body.kb #fab{display:none!important}
 .ac-it:last-child{border-bottom:0}
 .ac-it:active{background:var(--line)}
 .ac-it span{display:block;font-size:13px;color:var(--muted);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Dati riservati all'idraulico (non vanno nel PDF) */
+.mine small,.mine-box small{font-weight:500;opacity:.8}
+.mine input{border-style:dashed;border-color:var(--amber)}
+.mine{color:var(--amber)}
+.mine-box{background:var(--amber-soft);color:var(--amber)}
+.qline-m{margin-top:6px;font-size:13px;color:var(--amber);font-weight:600}
+.mine-card{border:1.5px dashed var(--amber)}
+.mine-card h3{color:var(--amber)}
+.mine-t{color:var(--amber)}

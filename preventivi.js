@@ -29,11 +29,14 @@ const getQuote = id => db.quotes.find(q => q.id === id);
 const quoteJob = q => db.jobs.find(j => j.quoteId === q.id);
 const ivaRate = q => (q.iva === 'forf' || q.iva === '0') ? 0 : num(q.iva);
 const lineTotal = l => num(l.qty) * num(l.price);
+const lineCost = l => num(l.qty) * num(l.cost); // quanto lo paghi tu: NON va nel PDF
+const lineMarginTxt = l => num(l.cost) ? `Tuo costo ${eur(lineCost(l))} · utile ${eur(lineTotal(l) - lineCost(l))}` : (l.unit === 'h' ? 'Manodopera: tutto utile' : 'Scrivi il tuo costo per vedere l\'utile');
 function quoteTotals(q) {
   const imp = sum((q.lines || []).map(lineTotal));
   const disc = Math.min(Math.max(0, num(q.discount)), imp);
   const base = imp - disc, iva = Math.round(base * ivaRate(q)) / 100;
-  return { imp, disc, base, iva, tot: base + iva };
+  const cost = sum((q.lines || []).map(lineCost)), profit = base - cost;
+  return { imp, disc, base, iva, tot: base + iva, cost, profit, pct: base > 0 ? profit / base * 100 : 0 };
 }
 function nextQuoteNumber() {
   const y = new Date().getFullYear();
@@ -96,12 +99,18 @@ function viewQuote(q) {
     ${q.description ? `<div class="card"><h3>Descrizione dei lavori</h3><div style="white-space:pre-wrap">${esc(q.description)}</div></div>` : ''}
     <div class="sec">Voci</div>
     <div class="list">${lines.map(l => `<div class="item"><div class="main"><div class="t" style="white-space:normal">${esc(l.desc || '—')}</div>
-      <div class="s">${numIn(num(l.qty)) || 0} ${esc(l.unit || '')} × ${eur(l.price)}</div></div><div class="r num">${eur(lineTotal(l))}</div></div>`).join('') || '<div class="empty">Nessuna voce. Aggiungile in "Modifica".</div>'}</div>
+      <div class="s">${numIn(num(l.qty)) || 0} ${esc(l.unit || '')} × ${eur(l.price)}${num(l.cost) ? ` · <span class="mine-t">tuo costo ${eur(lineCost(l))}</span>` : ''}</div></div><div class="r num">${eur(lineTotal(l))}</div></div>`).join('') || '<div class="empty">Nessuna voce. Aggiungile in "Modifica".</div>'}</div>
     <div class="card">
       <div class="kv"><span>Imponibile</span><span>${eur(t.imp)}</span></div>
       ${t.disc ? `<div class="kv"><span>Sconto</span><span class="out">−${eur(t.disc)}</span></div>` : ''}
       <div class="kv"><span>${ivaRate(q) ? 'IVA ' + ivaRate(q) + '%' : (q.iva === 'forf' ? 'Regime forfettario (senza IVA)' : 'Senza IVA')}</span><span>${eur(t.iva)}</span></div>
       <div class="kv" style="font-size:19px"><span><b>Totale</b></span><span><b>${eur(t.tot)}</b></span></div>
+    </div>
+    <div class="card mine-card"><h3>Solo per te · non compare nel PDF</h3>
+      <div class="kv"><span>Incasso senza IVA</span><span>${eur(t.base)}</span></div>
+      <div class="kv"><span>Tuo costo materiali</span><span class="out">−${eur(t.cost)}</span></div>
+      <div class="kv" style="font-size:18px"><span><b>Utile</b></span><span class="${t.profit >= 0 ? 'in' : 'out'}"><b>${eur(t.profit)}</b>${t.base > 0 ? ` <small class="muted">(${Math.round(t.pct)}%)</small>` : ''}</span></div>
+      ${lines.some(l => l.unit !== 'h' && !num(l.cost)) ? '<div class="muted small" style="margin-top:6px">Alcune voci non hanno il tuo costo: l\'utile reale sarà più basso.</div>' : ''}
     </div>
     <div class="card"><h3>Condizioni</h3>
       ${q.validity ? `<div class="kv"><span>Validità offerta</span><span>${esc(q.validity)} giorni</span></div>` : ''}
@@ -122,8 +131,12 @@ function lineRow(l, i) {
     <div class="row" style="margin-top:8px">
       <label style="margin:0">Q.tà<input name="lq_${i}" inputmode="decimal" value="${numIn(l.qty) || ''}" placeholder="1"></label>
       <label style="margin:0">Unità<select name="lu_${i}">${UNITS_Q.map(u => opt(u, l.unit || 'pz')).join('')}</select></label>
-      <label style="margin:0">Prezzo €<input name="lp_${i}" inputmode="decimal" value="${numIn(l.price)}" placeholder="0,00"></label>
-    </div></div>`;
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label style="margin:0" class="mine">Tuo costo € <small>(solo per te)</small><input name="lc_${i}" inputmode="decimal" value="${numIn(l.cost)}" placeholder="0,00"></label>
+      <label style="margin:0">Prezzo al cliente €<input name="lp_${i}" inputmode="decimal" value="${numIn(l.price)}" placeholder="0,00"></label>
+    </div>
+    <div class="qline-m" data-lm>${lineMarginTxt(l)}</div></div>`;
 }
 function quoteForm(q) {
   const isNew = !q, B = biz();
@@ -154,6 +167,7 @@ function quoteForm(q) {
     <div class="row"><label>Sconto (€)<input name="discount" inputmode="decimal" placeholder="0,00" value="${numIn(q.discount)}"></label>
       <label>IVA<select name="iva">${IVA_OPTS.map(([v, l]) => opt(v, q.iva, l)).join('')}</select></label></div>${IVA_HINT}
     <div class="totbox"><span>Totale preventivo</span><span id="qTot">${eur(quoteTotals(q).tot)}</span></div>
+    <div class="totbox mine-box"><span>Il tuo utile <small>(solo per te)</small></span><span id="qProfit">${eur(quoteTotals(q).profit)}</span></div>
 
     <div class="row"><label>Validità (giorni)<input name="validity" inputmode="numeric" value="${esc(q.validity)}"></label>
       <label>Tempi di esecuzione<input name="timing" placeholder="Es. 2 giorni" value="${esc(q.timing)}"></label></div>
@@ -166,7 +180,7 @@ function quoteForm(q) {
     apply: d => {
       const n = document.querySelectorAll('#qLines .qline').length;
       const lines = [];
-      for (let i = 0; i < n; i++) lines.push({ desc: (d['ld_' + i] || '').trim(), qty: num(d['lq_' + i]) || (d['lq_' + i] ? 0 : 1), unit: d['lu_' + i] || 'pz', price: num(d['lp_' + i]) });
+      for (let i = 0; i < n; i++) lines.push({ desc: (d['ld_' + i] || '').trim(), qty: num(d['lq_' + i]) || (d['lq_' + i] ? 0 : 1), unit: d['lu_' + i] || 'pz', price: num(d['lp_' + i]), cost: num(d['lc_' + i]) });
       Object.assign(q, {
         number: d.number.trim(), date: d.date, client: d.client.trim(), phone: d.phone.trim(), email: d.email.trim(), address: d.address.trim(),
         title: d.title.trim(), description: d.description.trim(), lines, discount: num(d.discount), iva: d.iva,
@@ -183,7 +197,8 @@ function quoteForm(q) {
       const refresh = () => setTimeout(() => {
         if (!box.isConnected) return;
         $('#qTot').textContent = eur(quoteTotals(q).tot);
-        box.querySelectorAll('.qline').forEach((row, i) => { const l = q.lines[i]; if (l) row.querySelector('[data-lt]').textContent = eur(lineTotal(l)); });
+        box.querySelectorAll('.qline').forEach((row, i) => { const l = q.lines[i]; if (l) { row.querySelector('[data-lt]').textContent = eur(lineTotal(l)); row.querySelector('[data-lm]').textContent = lineMarginTxt(l); } });
+        const t = quoteTotals(q); $('#qProfit').textContent = `${eur(t.profit)}${t.base > 0 ? ' (' + Math.round(t.pct) + '%)' : ''}`;
       }, 0);
       f.addEventListener('input', refresh); f.addEventListener('change', refresh);
       const redraw = focusLast => {
@@ -208,6 +223,12 @@ function quoteForm(q) {
         const prev = db.quotes.filter(x => x !== q).flatMap(x => (x.lines || []).map(l => ({ ...l, c: x.created || 0 })))
           .filter(l => (l.desc || '').trim().toLowerCase() === v && num(l.price)).sort((a, b) => b.c - a.c)[0];
         if (prev && !f['lp_' + i].value) { f['lp_' + i].value = numIn(prev.price); f['lu_' + i].value = prev.unit || 'pz'; }
+        if (prev && num(prev.cost) && !f['lc_' + i].value) f['lc_' + i].value = numIn(prev.cost);
+        // costo dall'archivio Materiali (ultimo prezzo pagato)
+        if (!f['lc_' + i].value) {
+          const mat = db.materials.filter(m => [(m.name || ''), (m.name || '') + ' ' + (m.brand || '')].some(n => n.trim().toLowerCase() === v)).sort((a, b) => a.date.localeCompare(b.date)).pop();
+          if (mat && num(mat.unitCost)) f['lc_' + i].value = numIn(mat.unitCost);
+        }
       });
       clientPicker(f, q);
       // Cliente già noto → telefono, email e indirizzo
