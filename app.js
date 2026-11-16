@@ -1,7 +1,6 @@
 'use strict';
 /* ================= Utility ================= */
 const KEY = 'idraulico.data.v1';
-const DRAFT = 'idraulico.draft.v1';
 const $ = (s, r = document) => r.querySelector(s);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -95,6 +94,7 @@ async function recover() {
     if (!raw) { if (db.jobs.length || db.materials.length || db.moves.length) idbSet('data', JSON.stringify(db)).catch(() => {}); return; }
     const d = normalize(JSON.parse(raw));
     const localEmpty = !db.jobs.length && !db.materials.length && !db.moves.length;
+    if (document.querySelector('.sheet-wrap')) return;
     if ((d.savedAt || 0) > (db.savedAt || 0) || (localEmpty && (d.jobs.length || d.materials.length || d.moves.length))) {
       db = d;
       try { localStorage.setItem(KEY, raw); } catch (e) {}
@@ -451,59 +451,60 @@ function render() {
 }
 
 /* ================= Moduli (fogli) ================= */
-function openSheet(title, body, onSave, opts = {}) {
+/* Moduli con salvataggio automatico: ogni modifica viene salvata subito, senza tasto "Salva". */
+function readForm(form) {
+  const v = {};
+  [...form.elements].forEach(x => {
+    if (!x.name) return;
+    if (x.type === 'checkbox') v[x.name] = x.checked;
+    else if (x.type === 'radio') { if (x.checked) v[x.name] = x.value; }
+    else v[x.name] = x.value;
+  });
+  return v;
+}
+function openSheet(title, body, cfg) {
   const el = document.createElement('div');
   el.className = 'sheet-wrap';
   el.innerHTML = `<div class="sheet" role="dialog" aria-label="${esc(title)}">
-    <div class="sheet-head"><button type="button" class="link" data-x>Annulla</button><strong>${esc(title)}</strong>
-      <button type="submit" form="sheetForm" class="link bold">Salva</button></div>
-    <form id="sheetForm" class="sheet-body" autocomplete="off">${body}
-      <button type="submit" class="btn solid full">Salva</button>
-      ${opts.del ? '<button type="button" class="btn danger full" data-del>Elimina</button>' : ''}</form></div>`;
+    <div class="sheet-head"><span class="saved" data-saved></span><strong>${esc(title)}</strong>
+      <button type="button" class="link bold" data-x>Fine</button></div>
+    <form class="sheet-body" autocomplete="off" onsubmit="return false">${body}
+      <p class="muted small" style="text-align:center;margin:4px 0 0">Le modifiche si salvano da sole.</p>
+      <button type="button" class="btn solid full" data-x>Fine</button>
+      <button type="button" class="btn danger full" data-del>Elimina</button></form></div>`;
   document.body.appendChild(el);
   document.body.style.overflow = 'hidden';
   const form = el.querySelector('form');
-  const clearDraft = () => { try { localStorage.removeItem(DRAFT); } catch (e) {} };
-  const close = () => { clearDraft(); el.remove(); document.body.style.overflow = ''; };
-  if (opts.draft) {
-    const keep = () => {
-      const v = {};
-      [...form.elements].forEach(x => { if (!x.name) return; if (x.type === 'checkbox') v[x.name] = x.checked; else if (x.type === 'radio') { if (x.checked) v[x.name] = x.value; } else v[x.name] = x.value; });
-      try { localStorage.setItem(DRAFT, JSON.stringify({ ...opts.draft, v, t: Date.now() })); } catch (e) {}
-    };
-    form.addEventListener('input', keep); form.addEventListener('change', keep);
-  }
-  el.querySelector('[data-x]').onclick = close;
+  const lbl = el.querySelector('[data-saved]');
+  let inserted = !cfg.isNew;
+  const sync = () => {
+    cfg.apply(readForm(form));
+    const empty = cfg.empty();
+    if (!inserted && !empty) { cfg.add(); inserted = true; }
+    else if (inserted && cfg.isNew && empty) { cfg.remove(); inserted = false; }
+    if (inserted || cfg.isNew) save();
+    lbl.textContent = inserted ? 'Salvato ✓' : '';
+  };
+  const close = () => {
+    sync();
+    el.remove(); document.body.style.overflow = '';
+    if (inserted && cfg.after) cfg.after();
+    render();
+  };
+  el.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
   el.addEventListener('click', e => { if (e.target === el) close(); });
-  form.onsubmit = e => {
-    e.preventDefault();
-    const d = Object.fromEntries(new FormData(form));
-    if (onSave(d, form) !== false) { save(); close(); render(); }
+  el.querySelector('[data-del]').onclick = () => {
+    if (!inserted) { el.remove(); document.body.style.overflow = ''; render(); return; }
+    if (confirm(cfg.delMsg || 'Eliminare definitivamente?')) {
+      cfg.remove(); save();
+      el.remove(); document.body.style.overflow = ''; render(); toast('Eliminato');
+    }
   };
-  if (opts.del) el.querySelector('[data-del]').onclick = () => {
-    if (confirm(opts.delMsg || 'Eliminare definitivamente?')) { opts.del(); save(); close(); render(); }
-  };
-  if (opts.init) opts.init(form);
+  if (cfg.init) cfg.init(form);
+  // ascoltati dopo init: così i completamenti automatici (cliente, articolo) vengono salvati anche loro
+  form.addEventListener('input', sync);
+  form.addEventListener('change', sync);
   return form;
-}
-function restoreDraft() {
-  let d;
-  try { d = JSON.parse(localStorage.getItem(DRAFT)); } catch (e) { return; }
-  if (!d || !d.v || Date.now() - (d.t || 0) > 14 * 864e5) return;
-  let form;
-  if (d.k === 'job') { const j = d.id && getJob(d.id); if (d.id && !j) return; form = jobForm(j || null, d.x); }
-  else if (d.k === 'mat') { const m = d.id && getMat(d.id); if (d.id && !m) return; form = matForm(m || null, d.x); }
-  else if (d.k === 'move') { const m = d.id && getMove(d.id); if (d.id && !m) return; form = moveForm(m || null); }
-  if (!form) return;
-  [...form.elements].forEach(x => {
-    if (!x.name || !(x.name in d.v)) return;
-    if (x.type === 'checkbox') x.checked = !!d.v[x.name];
-    else if (x.type === 'radio') x.checked = x.value === d.v[x.name];
-    else x.value = d.v[x.name];
-  });
-  if (form.qty) form.qty.dispatchEvent(new Event('input'));
-  try { localStorage.setItem(DRAFT, JSON.stringify(d)); } catch (e) {}
-  toast('Ripreso il modulo non ancora salvato');
 }
 const uniq = arr => [...new Set(arr.map(x => (x || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
 const datalist = (id, arr) => `<datalist id="${id}">${uniq(arr).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
@@ -511,14 +512,14 @@ const opt = (v, cur, l = v) => `<option value="${esc(v)}" ${v === cur ? 'selecte
 
 function jobForm(j, presetDate) {
   const isNew = !j;
-  j = j || { date: presetDate || today(), time: '', status: 'programmato', minutes: 0, amount: 0, paid: false };
+  j = j || { id: uid(), created: Date.now(), date: presetDate || today(), time: '', status: 'programmato', minutes: 0, amount: 0, paid: false };
   const mins = Math.round(j.minutes || 0);
   const body = `
-    <label>Lavoro da fare<input name="title" required placeholder="Es. Perdita sotto lavello" value="${esc(j.title)}"></label>
+    <label>Lavoro da fare<input name="title" placeholder="Es. Perdita sotto lavello" value="${esc(j.title)}"></label>
     <label>Cliente<input name="client" list="dlC" placeholder="Nome e cognome" value="${esc(j.client)}"></label>${datalist('dlC', db.jobs.map(x => x.client))}
     <div class="row"><label>Telefono<input name="phone" type="tel" value="${esc(j.phone)}"></label></div>
     <label>Indirizzo<input name="address" placeholder="Via, numero, città" value="${esc(j.address)}"></label>
-    <div class="row"><label>Data<input type="date" name="date" required value="${esc(j.date)}"></label>
+    <div class="row"><label>Data<input type="date" name="date" value="${esc(j.date)}"></label>
       <label>Ora<input type="time" name="time" value="${esc(j.time)}"></label></div>
     <label>Stato<select name="status">${opt('programmato', j.status, 'Programmato')}${opt('completato', j.status, 'Completato')}${opt('annullato', j.status, 'Annullato')}</select></label>
     <div class="row"><label>Ore impiegate<input name="h" inputmode="numeric" placeholder="0" value="${Math.floor(mins / 60) || ''}"></label>
@@ -528,23 +529,23 @@ function jobForm(j, presetDate) {
     <div class="row"><label>Data pagamento<input type="date" name="paidDate" value="${esc(j.paidDate || '')}"></label>
       <label>Pagamento<select name="payMethod">${opt('', j.payMethod || '', '—')}${['Contanti', 'Bonifico', 'POS / Carta', 'Assegno', 'Altro'].map(x => opt(x, j.payMethod)).join('')}</select></label></div>
     <label>Note<textarea name="notes" placeholder="Dettagli, codici, misure…">${esc(j.notes)}</textarea></label>`;
-  return openSheet(isNew ? 'Nuovo lavoro' : 'Modifica lavoro', body, d => {
-    Object.assign(j, {
+  return openSheet(isNew ? 'Nuovo lavoro' : 'Modifica lavoro', body, {
+    isNew,
+    apply: d => Object.assign(j, {
       title: d.title.trim(), client: d.client.trim(), phone: d.phone.trim(), address: d.address.trim(),
-      date: d.date, time: d.time, status: d.status,
+      date: d.date || j.date || today(), time: d.time, status: d.status,
       minutes: Math.max(0, num(d.h) * 60 + num(d.mi)),
       amount: num(d.amount), paid: !!d.paid, paidDate: d.paid ? (d.paidDate || today()) : '', payMethod: d.payMethod, notes: d.notes.trim()
-    });
-    if (isNew) { j.id = uid(); j.created = Date.now(); db.jobs.push(j); toast('Lavoro salvato'); }
-    S.day = j.date; const dd = parseISO(j.date); S.cy = dd.getFullYear(); S.cm = dd.getMonth();
-  }, {
-    del: isNew ? null : () => { db.materials = db.materials.filter(m => m.jobId !== j.id); db.jobs = db.jobs.filter(x => x !== j); S.jobId = null; },
+    }),
+    empty: () => !(j.title || j.client || j.phone || j.address || j.notes || j.amount || j.minutes),
+    add: () => db.jobs.push(j),
+    remove: () => { db.materials = db.materials.filter(m => m.jobId !== j.id); db.jobs = db.jobs.filter(x => x !== j); if (S.jobId === j.id) S.jobId = null; },
+    after: () => { S.day = j.date; const dd = parseISO(j.date); S.cy = dd.getFullYear(); S.cm = dd.getMonth(); },
     delMsg: 'Eliminare questo lavoro e i materiali collegati?',
-    draft: { k: 'job', id: isNew ? null : j.id, x: presetDate },
     init: f => {
       // Se scegli un cliente già noto, compila telefono e indirizzo
       f.client.addEventListener('change', () => {
-        const prev = db.jobs.filter(x => x.client && x.client.trim().toLowerCase() === f.client.value.trim().toLowerCase()).sort(byDateTime).pop();
+        const prev = db.jobs.filter(x => x !== j && x.client && x.client.trim().toLowerCase() === f.client.value.trim().toLowerCase()).sort(byDateTime).pop();
         if (prev) { if (!f.phone.value) f.phone.value = prev.phone || ''; if (!f.address.value) f.address.value = prev.address || ''; }
       });
       f.paid.addEventListener('change', () => { if (f.paid.checked && !f.paidDate.value) f.paidDate.value = today(); });
@@ -555,33 +556,33 @@ function jobForm(j, presetDate) {
 function matForm(m, jobId) {
   const isNew = !m;
   const job = jobId && getJob(jobId);
-  m = m || { date: job ? job.date : today(), qty: 1, unit: 'pz', jobId: jobId || '' };
+  m = m || { id: uid(), date: job ? job.date : today(), qty: 1, unit: 'pz', jobId: jobId || '' };
   const jobs = db.jobs.filter(x => x.status !== 'annullato').sort((a, b) => byDateTime(b, a)).slice(0, 150);
   if (m.jobId && !jobs.find(x => x.id === m.jobId) && getJob(m.jobId)) jobs.unshift(getJob(m.jobId));
   const units = ['pz', 'm', 'kg', 'l', 'conf', 'rotolo', 'set'];
   const body = `
-    <label>Articolo<input name="name" required list="dlN" placeholder="Es. Raccordo a T 1/2&quot;" value="${esc(m.name)}"></label>${datalist('dlN', db.materials.map(x => x.name))}
+    <label>Articolo<input name="name" list="dlN" placeholder="Es. Raccordo a T 1/2&quot;" value="${esc(m.name)}"></label>${datalist('dlN', db.materials.map(x => x.name))}
     <label>Marca<input name="brand" list="dlB" placeholder="Es. Grohe, Caleffi…" value="${esc(m.brand)}"></label>${datalist('dlB', db.materials.map(x => x.brand))}
     <div class="row"><label>Quantità<input name="qty" inputmode="decimal" value="${numIn(m.qty) || '1'}"></label>
       <label>Unità<select name="unit">${units.map(u => opt(u, m.unit)).join('')}</select></label></div>
     <label>Prezzo per unità (€)<input name="unitCost" inputmode="decimal" placeholder="0,00" value="${numIn(m.unitCost)}"></label>
     <div class="totbox"><span>Totale</span><span id="mTot">${eur(matTotal(m))}</span></div>
-    <label>Data<input type="date" name="date" required value="${esc(m.date)}"></label>
+    <label>Data<input type="date" name="date" value="${esc(m.date)}"></label>
     <label>Fornitore / negozio<input name="supplier" list="dlS" value="${esc(m.supplier)}"></label>${datalist('dlS', db.materials.map(x => x.supplier))}
-    <label>Per il lavoro<select name="jobId">${opt('', m.jobId || '', '— Nessuno (scorta / magazzino) —')}${jobs.map(x => opt(x.id, m.jobId, `${fmtDate(x.date, { day: 'numeric', month: 'short' })} · ${x.title}${x.client ? ' · ' + x.client : ''}`)).join('')}</select></label>
+    <label>Per il lavoro<select name="jobId">${opt('', m.jobId || '', '— Nessuno (scorta / magazzino) —')}${jobs.map(x => opt(x.id, m.jobId, `${fmtDate(x.date, { day: 'numeric', month: 'short' })} · ${x.title || 'Lavoro'}${x.client ? ' · ' + x.client : ''}`)).join('')}</select></label>
     <label>Note<textarea name="notes">${esc(m.notes)}</textarea></label>`;
-  return openSheet(isNew ? 'Nuovo materiale' : 'Modifica materiale', body, d => {
-    Object.assign(m, { name: d.name.trim(), brand: d.brand.trim(), qty: num(d.qty) || 1, unit: d.unit, unitCost: num(d.unitCost), date: d.date, supplier: d.supplier.trim(), jobId: d.jobId, notes: d.notes.trim() });
-    if (isNew) { m.id = uid(); db.materials.push(m); toast('Materiale salvato'); }
-  }, {
-    del: isNew ? null : () => { db.materials = db.materials.filter(x => x !== m); },
-    draft: { k: 'mat', id: isNew ? null : m.id, x: jobId },
+  return openSheet(isNew ? 'Nuovo materiale' : 'Modifica materiale', body, {
+    isNew,
+    apply: d => Object.assign(m, { name: d.name.trim(), brand: d.brand.trim(), qty: num(d.qty) || 1, unit: d.unit, unitCost: num(d.unitCost), date: d.date || m.date || today(), supplier: d.supplier.trim(), jobId: d.jobId, notes: d.notes.trim() }),
+    empty: () => !(m.name || m.brand || m.unitCost || m.supplier || m.notes),
+    add: () => db.materials.push(m),
+    remove: () => { db.materials = db.materials.filter(x => x !== m); },
     init: f => {
       const upd = () => { $('#mTot').textContent = eur(num(f.qty.value) * num(f.unitCost.value)); };
       f.qty.addEventListener('input', upd); f.unitCost.addEventListener('input', upd);
       // Se l'articolo è già stato comprato, propone marca, unità e ultimo prezzo
       f.name.addEventListener('change', () => {
-        const prev = db.materials.filter(x => x.name.trim().toLowerCase() === f.name.value.trim().toLowerCase()).sort((a, b) => a.date.localeCompare(b.date)).pop();
+        const prev = db.materials.filter(x => x !== m && (x.name || '').trim().toLowerCase() === f.name.value.trim().toLowerCase()).sort((a, b) => a.date.localeCompare(b.date)).pop();
         if (prev) {
           if (!f.brand.value) f.brand.value = prev.brand || '';
           if (!f.unitCost.value) f.unitCost.value = numIn(prev.unitCost);
@@ -595,21 +596,23 @@ function matForm(m, jobId) {
 
 function moveForm(v) {
   const isNew = !v;
-  v = v || { type: 'out', date: today() };
+  v = v || { id: uid(), type: 'out', date: today() };
   const cats = ['Carburante', 'Furgone / manutenzione', 'Attrezzatura', 'Assicurazione', 'Tasse e contributi', 'Commercialista', 'Telefono', 'Pranzo / trasferta', 'Altro', 'Lavoro extra', 'Rimborso'];
   const body = `
     <div class="radio"><label><input type="radio" name="type" value="in" ${v.type === 'in' ? 'checked' : ''}><span class="r-in">+ Entrata</span></label>
       <label><input type="radio" name="type" value="out" ${v.type !== 'in' ? 'checked' : ''}><span class="r-out">− Uscita</span></label></div>
-    <label>Importo (€)<input name="amount" required inputmode="decimal" placeholder="0,00" value="${numIn(v.amount)}"></label>
+    <label>Importo (€)<input name="amount" inputmode="decimal" placeholder="0,00" value="${numIn(v.amount)}"></label>
     <label>Categoria<input name="category" list="dlCat" placeholder="Es. Carburante" value="${esc(v.category)}"></label>${datalist('dlCat', cats.concat(db.moves.map(x => x.category)))}
     <label>Descrizione<input name="desc" placeholder="Es. Pieno furgone" value="${esc(v.desc)}"></label>
-    <label>Data<input type="date" name="date" required value="${esc(v.date)}"></label>`;
-  return openSheet(isNew ? 'Nuovo movimento' : 'Modifica movimento', body, d => {
-    if (num(d.amount) <= 0) { alert('Inserisci un importo.'); return false; }
-    Object.assign(v, { type: d.type, amount: num(d.amount), category: d.category.trim(), desc: d.desc.trim(), date: d.date });
-    if (isNew) { v.id = uid(); db.moves.push(v); toast('Movimento salvato'); }
-    const dd = parseISO(v.date); S.my = dd.getFullYear(); S.mm = dd.getMonth();
-  }, { del: isNew ? null : () => { db.moves = db.moves.filter(x => x !== v); }, draft: { k: 'move', id: isNew ? null : v.id } });
+    <label>Data<input type="date" name="date" value="${esc(v.date)}"></label>`;
+  return openSheet(isNew ? 'Nuovo movimento' : 'Modifica movimento', body, {
+    isNew,
+    apply: d => Object.assign(v, { type: d.type || 'out', amount: num(d.amount), category: d.category.trim(), desc: d.desc.trim(), date: d.date || v.date || today() }),
+    empty: () => !(v.amount || v.category || v.desc),
+    add: () => db.moves.push(v),
+    remove: () => { db.moves = db.moves.filter(x => x !== v); },
+    after: () => { const dd = parseISO(v.date); S.my = dd.getFullYear(); S.mm = dd.getMonth(); }
+  });
 }
 
 /* ================= Backup ================= */
@@ -724,4 +727,5 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && !d
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 render();
-recover().finally(restoreDraft);
+try { localStorage.removeItem('idraulico.draft.v1'); } catch (e) {}
+recover();

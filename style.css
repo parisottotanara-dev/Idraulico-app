@@ -151,3 +151,5 @@ textarea{min-height:80px;resize:vertical}
 .hint{background:var(--accent-soft);color:var(--text);border-radius:var(--radius);padding:12px 14px;margin:0 0 14px;font-size:14px}
 .hint b{color:var(--accent)}
 .toast{position:fixed;left:50%;bottom:calc(var(--tabh) + var(--safe-b) + 90px);transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:99px;font-size:14px;font-weight:600;z-index:60;animation:fade .2s}
+.sheet-head .saved{min-width:80px;font-size:14px;font-weight:600;color:var(--green)}
+.sheet-head .link{min-width:80px;text-align:right}
