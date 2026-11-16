@@ -1,6 +1,7 @@
 'use strict';
 /* ================= Utility ================= */
 const KEY = 'idraulico.data.v1';
+const DRAFT = 'idraulico.draft.v1';
 const $ = (s, r = document) => r.querySelector(s);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -41,7 +42,7 @@ function toast(msg) {
 function normalize(d) {
   d = d || {};
   return {
-    version: 1,
+    version: 1, savedAt: d.savedAt || 0,
     jobs: Array.isArray(d.jobs) ? d.jobs : [],
     materials: Array.isArray(d.materials) ? d.materials : [],
     moves: Array.isArray(d.moves) ? d.moves : [],
@@ -51,9 +52,56 @@ function normalize(d) {
 function load() {
   try { return normalize(JSON.parse(localStorage.getItem(KEY))); } catch (e) { return normalize(); }
 }
+/* Copia di sicurezza in IndexedDB (Safari a volte svuota localStorage) */
+let idbConn = null;
+function idb() {
+  if (idbConn) return idbConn;
+  idbConn = new Promise((res, rej) => {
+    if (!window.indexedDB) return rej(new Error('no idb'));
+    const r = indexedDB.open('idraulico', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  idbConn.catch(() => { idbConn = null; });
+  return idbConn;
+}
+async function idbGet(k) {
+  const d = await idb();
+  return new Promise((res, rej) => { const q = d.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+}
+async function idbSet(k, v) {
+  const d = await idb();
+  return new Promise((res, rej) => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); });
+}
+let saveFailed = false;
 function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(db)); }
-  catch (e) { alert('Impossibile salvare: memoria del telefono piena?'); }
+  db.savedAt = Date.now();
+  const json = JSON.stringify(db);
+  let ok = false;
+  try { localStorage.setItem(KEY, json); ok = localStorage.getItem(KEY) === json; } catch (e) { ok = false; }
+  idbSet('data', json).then(() => { if (saveFailed) { saveFailed = false; render(); } }).catch(() => {
+    if (!ok) { saveFailed = true; alert('ATTENZIONE: il telefono non permette di salvare i dati. Apri l\'app dall\'icona sulla schermata Home e non da una finestra privata di Safari.'); }
+  });
+  if (!ok) saveFailed = true;
+}
+function storageWorks() {
+  try { localStorage.setItem('_t', '1'); const ok = localStorage.getItem('_t') === '1'; localStorage.removeItem('_t'); return ok; } catch (e) { return false; }
+}
+/* All'avvio: se la copia in IndexedDB è più recente (o localStorage è vuoto) la recupera */
+async function recover() {
+  try {
+    const raw = await idbGet('data');
+    if (!raw) { if (db.jobs.length || db.materials.length || db.moves.length) idbSet('data', JSON.stringify(db)).catch(() => {}); return; }
+    const d = normalize(JSON.parse(raw));
+    const localEmpty = !db.jobs.length && !db.materials.length && !db.moves.length;
+    if ((d.savedAt || 0) > (db.savedAt || 0) || (localEmpty && (d.jobs.length || d.materials.length || d.moves.length))) {
+      db = d;
+      try { localStorage.setItem(KEY, raw); } catch (e) {}
+      if (!document.querySelector('.sheet-wrap')) render();
+      toast('Dati recuperati');
+    }
+  } catch (e) {}
 }
 let db = load();
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
@@ -396,7 +444,9 @@ function render() {
   } else v = VIEWS[S.tab]();
   $('#title').textContent = v.title;
   $('#back').hidden = !S.jobId;
-  $('#main').innerHTML = timerBanner() + v.html;
+  const warn = (saveFailed || !storageWorks())
+    ? `<div class="hint" style="background:var(--red-soft)"><b style="color:var(--red)">I dati NON vengono salvati.</b> Probabilmente stai usando una finestra privata di Safari. Apri il link in una finestra normale di Safari, poi Condividi → "Aggiungi alla schermata Home" e usa sempre l'icona.</div>` : '';
+  $('#main').innerHTML = warn + timerBanner() + v.html;
   $('#fab').hidden = !!S.jobId || S.tab === 'riepilogo';
 }
 
@@ -413,7 +463,16 @@ function openSheet(title, body, onSave, opts = {}) {
   document.body.appendChild(el);
   document.body.style.overflow = 'hidden';
   const form = el.querySelector('form');
-  const close = () => { el.remove(); document.body.style.overflow = ''; };
+  const clearDraft = () => { try { localStorage.removeItem(DRAFT); } catch (e) {} };
+  const close = () => { clearDraft(); el.remove(); document.body.style.overflow = ''; };
+  if (opts.draft) {
+    const keep = () => {
+      const v = {};
+      [...form.elements].forEach(x => { if (!x.name) return; if (x.type === 'checkbox') v[x.name] = x.checked; else if (x.type === 'radio') { if (x.checked) v[x.name] = x.value; } else v[x.name] = x.value; });
+      try { localStorage.setItem(DRAFT, JSON.stringify({ ...opts.draft, v, t: Date.now() })); } catch (e) {}
+    };
+    form.addEventListener('input', keep); form.addEventListener('change', keep);
+  }
   el.querySelector('[data-x]').onclick = close;
   el.addEventListener('click', e => { if (e.target === el) close(); });
   form.onsubmit = e => {
@@ -425,6 +484,26 @@ function openSheet(title, body, onSave, opts = {}) {
     if (confirm(opts.delMsg || 'Eliminare definitivamente?')) { opts.del(); save(); close(); render(); }
   };
   if (opts.init) opts.init(form);
+  return form;
+}
+function restoreDraft() {
+  let d;
+  try { d = JSON.parse(localStorage.getItem(DRAFT)); } catch (e) { return; }
+  if (!d || !d.v || Date.now() - (d.t || 0) > 14 * 864e5) return;
+  let form;
+  if (d.k === 'job') { const j = d.id && getJob(d.id); if (d.id && !j) return; form = jobForm(j || null, d.x); }
+  else if (d.k === 'mat') { const m = d.id && getMat(d.id); if (d.id && !m) return; form = matForm(m || null, d.x); }
+  else if (d.k === 'move') { const m = d.id && getMove(d.id); if (d.id && !m) return; form = moveForm(m || null); }
+  if (!form) return;
+  [...form.elements].forEach(x => {
+    if (!x.name || !(x.name in d.v)) return;
+    if (x.type === 'checkbox') x.checked = !!d.v[x.name];
+    else if (x.type === 'radio') x.checked = x.value === d.v[x.name];
+    else x.value = d.v[x.name];
+  });
+  if (form.qty) form.qty.dispatchEvent(new Event('input'));
+  try { localStorage.setItem(DRAFT, JSON.stringify(d)); } catch (e) {}
+  toast('Ripreso il modulo non ancora salvato');
 }
 const uniq = arr => [...new Set(arr.map(x => (x || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
 const datalist = (id, arr) => `<datalist id="${id}">${uniq(arr).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
@@ -449,7 +528,7 @@ function jobForm(j, presetDate) {
     <div class="row"><label>Data pagamento<input type="date" name="paidDate" value="${esc(j.paidDate || '')}"></label>
       <label>Pagamento<select name="payMethod">${opt('', j.payMethod || '', '—')}${['Contanti', 'Bonifico', 'POS / Carta', 'Assegno', 'Altro'].map(x => opt(x, j.payMethod)).join('')}</select></label></div>
     <label>Note<textarea name="notes" placeholder="Dettagli, codici, misure…">${esc(j.notes)}</textarea></label>`;
-  openSheet(isNew ? 'Nuovo lavoro' : 'Modifica lavoro', body, d => {
+  return openSheet(isNew ? 'Nuovo lavoro' : 'Modifica lavoro', body, d => {
     Object.assign(j, {
       title: d.title.trim(), client: d.client.trim(), phone: d.phone.trim(), address: d.address.trim(),
       date: d.date, time: d.time, status: d.status,
@@ -461,6 +540,7 @@ function jobForm(j, presetDate) {
   }, {
     del: isNew ? null : () => { db.materials = db.materials.filter(m => m.jobId !== j.id); db.jobs = db.jobs.filter(x => x !== j); S.jobId = null; },
     delMsg: 'Eliminare questo lavoro e i materiali collegati?',
+    draft: { k: 'job', id: isNew ? null : j.id, x: presetDate },
     init: f => {
       // Se scegli un cliente già noto, compila telefono e indirizzo
       f.client.addEventListener('change', () => {
@@ -490,11 +570,12 @@ function matForm(m, jobId) {
     <label>Fornitore / negozio<input name="supplier" list="dlS" value="${esc(m.supplier)}"></label>${datalist('dlS', db.materials.map(x => x.supplier))}
     <label>Per il lavoro<select name="jobId">${opt('', m.jobId || '', '— Nessuno (scorta / magazzino) —')}${jobs.map(x => opt(x.id, m.jobId, `${fmtDate(x.date, { day: 'numeric', month: 'short' })} · ${x.title}${x.client ? ' · ' + x.client : ''}`)).join('')}</select></label>
     <label>Note<textarea name="notes">${esc(m.notes)}</textarea></label>`;
-  openSheet(isNew ? 'Nuovo materiale' : 'Modifica materiale', body, d => {
+  return openSheet(isNew ? 'Nuovo materiale' : 'Modifica materiale', body, d => {
     Object.assign(m, { name: d.name.trim(), brand: d.brand.trim(), qty: num(d.qty) || 1, unit: d.unit, unitCost: num(d.unitCost), date: d.date, supplier: d.supplier.trim(), jobId: d.jobId, notes: d.notes.trim() });
     if (isNew) { m.id = uid(); db.materials.push(m); toast('Materiale salvato'); }
   }, {
     del: isNew ? null : () => { db.materials = db.materials.filter(x => x !== m); },
+    draft: { k: 'mat', id: isNew ? null : m.id, x: jobId },
     init: f => {
       const upd = () => { $('#mTot').textContent = eur(num(f.qty.value) * num(f.unitCost.value)); };
       f.qty.addEventListener('input', upd); f.unitCost.addEventListener('input', upd);
@@ -523,12 +604,12 @@ function moveForm(v) {
     <label>Categoria<input name="category" list="dlCat" placeholder="Es. Carburante" value="${esc(v.category)}"></label>${datalist('dlCat', cats.concat(db.moves.map(x => x.category)))}
     <label>Descrizione<input name="desc" placeholder="Es. Pieno furgone" value="${esc(v.desc)}"></label>
     <label>Data<input type="date" name="date" required value="${esc(v.date)}"></label>`;
-  openSheet(isNew ? 'Nuovo movimento' : 'Modifica movimento', body, d => {
+  return openSheet(isNew ? 'Nuovo movimento' : 'Modifica movimento', body, d => {
     if (num(d.amount) <= 0) { alert('Inserisci un importo.'); return false; }
     Object.assign(v, { type: d.type, amount: num(d.amount), category: d.category.trim(), desc: d.desc.trim(), date: d.date });
     if (isNew) { v.id = uid(); db.moves.push(v); toast('Movimento salvato'); }
     const dd = parseISO(v.date); S.my = dd.getFullYear(); S.mm = dd.getMonth();
-  }, { del: isNew ? null : () => { db.moves = db.moves.filter(x => x !== v); } });
+  }, { del: isNew ? null : () => { db.moves = db.moves.filter(x => x !== v); }, draft: { k: 'move', id: isNew ? null : v.id } });
 }
 
 /* ================= Backup ================= */
@@ -643,3 +724,4 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && !d
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 render();
+recover().finally(restoreDraft);
