@@ -33,6 +33,7 @@ function fmtMin(m) {
   return mm ? `${h} h ${pad(mm)}` : `${h} h`;
 }
 function toast(msg) {
+  document.querySelectorAll('.toast').forEach(x => x.remove());
   const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
   document.body.appendChild(t); setTimeout(() => t.remove(), 2200);
 }
@@ -288,7 +289,15 @@ function viewJob(j) {
         <div class="big" data-timer="${j.id}">${fmtMin(mins)}</div>
         <button class="btn ${j.timerStart ? 'danger' : 'solid'}" data-a="timer" data-id="${j.id}">${j.timerStart ? ICON.stop + ' Ferma' : ICON.play + ' Avvia'}</button>
       </div>
-      <div class="muted small" style="margin-top:6px">${j.timerStart ? 'Cronometro in corso…' : 'Avvia il cronometro quando inizi, oppure scrivi le ore in "Modifica".'}</div></div>
+      <div class="muted small" style="margin-top:6px">${j.timerStart ? 'Cronometro in corso…' : 'Avvia il cronometro quando inizi, oppure scrivi tu il tempo qui sotto.'}</div>
+      <div class="row" style="margin-top:12px">
+        <label style="margin:0">Ore<input id="tH" inputmode="numeric" placeholder="0" value="${Math.floor(Math.round(mins) / 60) || ''}"></label>
+        <label style="margin:0">Minuti<input id="tM" inputmode="numeric" placeholder="0" value="${Math.round(mins) % 60 || ''}"></label></div>
+      <div class="quick">
+        <button class="btn" data-a="addTime" data-id="15">+15 min</button>
+        <button class="btn" data-a="addTime" data-id="30">+30 min</button>
+        <button class="btn" data-a="addTime" data-id="60">+1 h</button>
+        <button class="btn danger" data-a="resetTime">Azzera</button></div></div>
 
     <div class="sec">Materiali usati</div>
     <div class="list">${mats.map(m => matItem(m, false)).join('') || '<div class="empty">Nessun materiale.</div>'}
@@ -451,14 +460,14 @@ function render() {
 
 /* ================= Moduli (fogli) ================= */
 /* Richiesta di conferma ben visibile (al posto della finestrella di sistema) */
-function askConfirm(title, text, okLabel = 'Elimina') {
+function askConfirm(title, text, okLabel = 'Elimina', noLabel = 'Annulla, non eliminare') {
   return new Promise(resolve => {
     const el = document.createElement('div');
     el.className = 'ask-wrap';
     el.innerHTML = `<div class="ask" role="alertdialog" aria-label="${esc(title)}">
       <div class="ask-icon">!</div><h2>${esc(title)}</h2><p>${esc(text)}</p>
       <button type="button" class="btn danger full" data-ok>${esc(okLabel)}</button>
-      <button type="button" class="btn full" data-no>Annulla, non eliminare</button></div>`;
+      <button type="button" class="btn full" data-no>${esc(noLabel)}</button></div>`;
     document.body.appendChild(el);
     const done = v => { el.remove(); resolve(v); };
     el.querySelector('[data-ok]').onclick = () => done(true);
@@ -713,6 +722,17 @@ const A = {
     document.body.appendChild(el);
     el.addEventListener('click', e => { if (e.target === el || e.target.closest('a,[data-no]')) setTimeout(() => el.remove(), 50); });
   },
+  addTime: n => {
+    const j = getJob(S.jobId); if (!j) return;
+    j.minutes = jobMinutes(j) + +n;
+    if (j.timerStart) j.timerStart = Date.now();
+    save(); render(); toast('Aggiunti ' + fmtMin(+n) + ' · totale ' + fmtMin(jobMinutes(j)));
+  },
+  resetTime: async () => {
+    const j = getJob(S.jobId); if (!j) return;
+    if (!(await askConfirm('Azzerare il tempo?', `Il tempo di questo lavoro (${fmtMin(jobMinutes(j))}) tornerà a zero.`, 'Azzera', 'Annulla'))) return;
+    j.minutes = 0; j.timerStart = null; save(); render();
+  },
   hideInstall: () => { db.settings.hideInstall = true; save(); render(); },
   exportJson: async () => {
     const ok = await shareFile(`backup-idraulico-${stamp()}.json`, JSON.stringify(db, null, 1), 'application/json');
@@ -738,9 +758,22 @@ document.addEventListener('click', e => {
   const fn = A[t.dataset.a];
   if (fn) { e.preventDefault(); fn(t.dataset.id, t); }
 });
+// Aggiorna i conti quando ha finito di scrivere il tempo (non mentre passa da Ore a Minuti)
+document.addEventListener('change', e => {
+  if (e.target.id === 'tH' || e.target.id === 'tM')
+    setTimeout(() => { const a = document.activeElement; if (!a || (a.id !== 'tH' && a.id !== 'tM')) render(); }, 150);
+});
 document.addEventListener('input', e => {
   if (e.target.id === 'q') { S.q = e.target.value; $('#list').innerHTML = jobsList(); }
   if (e.target.id === 'mq') { S.mq = e.target.value; $('#list').innerHTML = matList(); }
+  if ((e.target.id === 'tH' || e.target.id === 'tM') && S.jobId) {
+    // Tempo scritto a mano: diventa il totale (se il cronometro gira, riparte da qui)
+    const j = getJob(S.jobId); if (!j) return;
+    j.minutes = Math.max(0, num($('#tH').value) * 60 + num($('#tM').value));
+    if (j.timerStart) j.timerStart = Date.now();
+    save();
+    document.querySelectorAll(`[data-timer="${j.id}"]`).forEach(el => { el.textContent = fmtMin(jobMinutes(j)); });
+  }
 });
 $('#importFile').addEventListener('change', async e => {
   const file = e.target.files[0]; e.target.value = '';

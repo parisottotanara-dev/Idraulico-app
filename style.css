@@ -159,3 +159,5 @@ textarea{min-height:80px;resize:vertical}
 .ask h2{margin:0 0 6px;font-size:19px}
 .ask p{margin:0 0 8px;color:var(--muted);font-size:15px}
 .ask .btn{padding:13px;font-size:16px}
+.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+.quick .btn{padding:10px 4px;font-size:14px}
