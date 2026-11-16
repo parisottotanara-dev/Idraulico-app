@@ -232,9 +232,19 @@ function viewAgenda() {
   const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
   const installHint = isIOS && !navigator.standalone && !db.settings.hideInstall
     ? `<div class="hint"><b>Installa l'app:</b> in Safari tocca <b>Condividi</b> (il quadrato con la freccia) e poi <b>"Aggiungi alla schermata Home"</b>. <button class="link small" data-a="hideInstall" style="font-size:14px">Ok, nascondi</button></div>` : '';
+  // App vuota (appena installata o reinstallata): proposta di ripristino del backup
+  const isEmpty = !db.jobs.length && !db.materials.length && !db.moves.length && !db.quotes.length;
+  const restoreHint = isEmpty ? `<div class="hint"><b>Hai già usato l'app su questo telefono?</b> Se l'avevi cancellata e rimessa, i dati si recuperano dal file di backup.
+    <button class="btn solid full" data-a="importJson">Ripristina i miei dati da un backup</button></div>` : '';
+  // Promemoria backup: se è passata più di una settimana
+  const lbk = db.settings.lastBackup, bkDays = lbk ? Math.floor((Date.now() - lbk) / 864e5) : null;
+  const backupHint = !isEmpty && (bkDays === null || bkDays >= 7) ? `<div class="hint" style="background:var(--amber-soft)">
+    <b style="color:var(--amber)">${bkDays === null ? 'Non hai ancora fatto un backup.' : `Ultimo backup ${bkDays} giorni fa.`}</b>
+    Se cancelli l'app dal telefono i dati si perdono: salvane una copia (su iCloud/File o su WhatsApp).
+    <button class="btn solid full" data-a="exportJson">Salva backup adesso</button></div>` : '';
   return {
     title: 'Agenda',
-    html: `${installHint}
+    html: `${installHint}${restoreHint}${backupHint}
     <div class="card">${monthNav(`${MONTHS[m]} ${y}`, 'calPrev', 'calNext', 'calToday')}<div class="cal">${cells}</div></div>
     <div class="sec">${esc(fmtDateLong(S.day))}</div>
     <div class="list">${dayJobs.map(j => jobItem(j, false)).join('') || `<div class="empty">Nessun impegno.<br><button class="btn full" data-a="newJob">+ Aggiungi impegno</button></div>`}</div>
