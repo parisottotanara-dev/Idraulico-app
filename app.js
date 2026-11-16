@@ -481,6 +481,52 @@ function render() {
   $('#fab').hidden = !!S.jobId || !!S.quoteId || S.tab === 'riepilogo';
 }
 
+/* ================= Rubrica clienti =================
+   I clienti si salvano da soli: ogni nome usato in un lavoro o preventivo finisce in rubrica
+   con gli ultimi telefono, indirizzo ed email inseriti. */
+function getClients() {
+  const m = new Map();
+  [...db.jobs, ...db.quotes].map(x => ({ x, t: x.created || 0 })).sort((a, b) => a.t - b.t).forEach(({ x, t }) => {
+    const name = (x.client || '').trim(); if (!name) return;
+    const k = name.toLowerCase(), c = m.get(k) || { name, count: 0 };
+    c.name = name; c.count++; c.last = t;
+    ['phone', 'address', 'email'].forEach(f => { if (x[f]) c[f] = x[f]; });
+    m.set(k, c);
+  });
+  return [...m.values()].sort((a, b) => b.last - a.last);
+}
+/** Tendina sotto il campo Cliente: scegliendo un nome compila tutti i suoi dati */
+function clientPicker(f, self) {
+  const inp = f.client; if (!inp) return;
+  const wrap = inp.closest('.ac-wrap');
+  const box = document.createElement('div'); box.className = 'ac'; box.hidden = true; wrap.appendChild(box);
+  inp.setAttribute('autocomplete', 'off');
+  let items = [];
+  const show = () => {
+    const s = inp.value.trim().toLowerCase();
+    items = getClients().filter(c => c.name.toLowerCase() !== (self.client || '').trim().toLowerCase() || s)
+      .filter(c => !s || c.name.toLowerCase().includes(s)).slice(0, 8);
+    if (items.length === 1 && items[0].name.toLowerCase() === s) items = [];
+    box.innerHTML = items.map((c, i) => `<button type="button" class="ac-it" data-i="${i}"><b>${esc(c.name)}</b>
+      <span>${[c.phone, c.address].filter(Boolean).map(esc).join(' · ') || 'nessun altro dato'}</span></button>`).join('');
+    box.hidden = !items.length;
+  };
+  inp.addEventListener('input', show);
+  inp.addEventListener('focus', show);
+  inp.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 200));
+  // pointerdown: scegliere prima che la tastiera si chiuda
+  box.addEventListener('pointerdown', e => {
+    const b = e.target.closest('.ac-it'); if (!b) return;
+    e.preventDefault();
+    const c = items[+b.dataset.i]; if (!c) return;
+    inp.value = c.name;
+    ['phone', 'address', 'email'].forEach(k => { if (f[k] && c[k]) f[k].value = c[k]; });
+    box.hidden = true; inp.blur();
+    f.dispatchEvent(new Event('change'));
+    toast('Dati di ' + c.name + ' inseriti');
+  });
+}
+
 /* ================= Moduli (fogli) ================= */
 /* Richiesta di conferma ben visibile (al posto della finestrella di sistema) */
 function askConfirm(title, text, okLabel = 'Elimina', noLabel = 'Annulla, non eliminare') {
@@ -565,7 +611,7 @@ function jobForm(j, presetDate, fromQuote) {
   const qSel = avail.length ? `<label>Da un preventivo <span class="muted">(facoltativo)</span><select name="quoteId">${opt('', j.quoteId || '', '— Nessuno —')}${avail.map(q => opt(q.id, j.quoteId || '', `N. ${q.number} · ${q.title || 'Preventivo'}${q.client ? ' · ' + q.client : ''} · ${eur(quoteTotals(q).tot)}`)).join('')}</select></label>` : '';
   const body = `${qSel}
     <label>Lavoro da fare<input name="title" placeholder="Es. Perdita sotto lavello" value="${esc(j.title)}"></label>
-    <label>Cliente<input name="client" list="dlC" placeholder="Nome e cognome" value="${esc(j.client)}"></label>${datalist('dlC', db.jobs.map(x => x.client))}
+    <label class="ac-wrap">Cliente<input name="client" placeholder="Nome e cognome" value="${esc(j.client)}"></label>
     <div class="row"><label>Telefono<input name="phone" type="tel" value="${esc(j.phone)}"></label></div>
     <label>Indirizzo<input name="address" placeholder="Via, numero, città" value="${esc(j.address)}"></label>
     <div class="row"><label>Data<input type="date" name="date" value="${esc(j.date)}"></label>
@@ -608,6 +654,7 @@ function jobForm(j, presetDate, fromQuote) {
       };
       if (f.quoteId) f.quoteId.addEventListener('change', fillFromQuote);
       if (fromQuote && f.quoteId) setTimeout(() => { f.quoteId.value = fromQuote; fillFromQuote(); f.dispatchEvent(new Event('change')); }, 0);
+      clientPicker(f, j);
       // Se scegli un cliente già noto, compila telefono e indirizzo
       f.client.addEventListener('change', () => {
         const prev = db.jobs.filter(x => x !== j && x.client && x.client.trim().toLowerCase() === f.client.value.trim().toLowerCase()).sort(byDateTime).pop();

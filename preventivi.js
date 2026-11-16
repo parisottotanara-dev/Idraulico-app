@@ -6,7 +6,13 @@
    - quando il cliente accetta si crea il lavoro con tutti i dati già compilati
    ===================================================================== */
 const QSTATUS = { bozza: ['Da inviare', ''], inviato: ['Inviato', 'blue'], accettato: ['Accettato', 'green'], rifiutato: ['Rifiutato', 'red'] };
-const IVA_OPTS = [['22', 'IVA 22%'], ['10', 'IVA 10% (manutenzione / ristrutturazione casa)'], ['4', 'IVA 4%'], ['forf', 'Senza IVA – regime forfettario'], ['0', 'Senza IVA (altro motivo)']];
+const IVA_OPTS = [
+  ['22', 'IVA 22% – aziende, negozi, uffici, casi normali'],
+  ['10', 'IVA 10% – manutenzione/riparazione in casa di privati'],
+  ['4', 'IVA 4% – impianti nella costruzione di prima casa'],
+  ['forf', 'Senza IVA – regime forfettario'],
+  ['0', 'Senza IVA (altro motivo)']];
+const IVA_HINT = `<p class="muted small" style="margin:-6px 0 12px">10% solo per manutenzione e riparazioni in abitazioni di privati (per caldaie, sanitari e rubinetteria il 10% vale fino al valore della manodopera). Nel dubbio chiedi al commercialista.</p>`;
 const UNITS_Q = ['pz', 'm', 'h', 'a corpo', 'kg', 'l', 'conf'];
 const BIZ_DEFAULTS = {
   iva: '22', validity: 30, rate: '',
@@ -16,6 +22,7 @@ const BIZ_DEFAULTS = {
 function biz() {
   const b = db.settings.biz || (db.settings.biz = {});
   for (const k in BIZ_DEFAULTS) if (b[k] === undefined) b[k] = BIZ_DEFAULTS[k];
+  delete b.logo; // il logo per ora non si usa
   return b;
 }
 const getQuote = id => db.quotes.find(q => q.id === id);
@@ -125,12 +132,11 @@ function quoteForm(q) {
     lines: [], iva: B.iva, discount: 0, validity: B.validity, timing: '', payment: B.payment, notes: B.notes
   };
   if (!q.lines) q.lines = [];
-  const clients = db.jobs.map(x => x.client).concat(db.quotes.map(x => x.client));
   const descs = db.quotes.flatMap(x => (x.lines || []).map(l => l.desc)).concat(db.materials.map(m => m.name + (m.brand ? ' ' + m.brand : '')));
   const body = `
     <div class="row"><label>Numero<input name="number" value="${esc(q.number)}"></label>
       <label>Data <span class="muted">(facoltativa)</span><input type="date" name="date" value="${esc(q.date)}"></label></div>
-    <label>Cliente<input name="client" list="dlQC" placeholder="Nome e cognome / ditta" value="${esc(q.client)}"></label>${datalist('dlQC', clients)}
+    <label class="ac-wrap">Cliente<input name="client" placeholder="Nome e cognome / ditta" value="${esc(q.client)}"></label>
     <div class="row"><label>Telefono<input name="phone" type="tel" value="${esc(q.phone)}"></label>
       <label>Email<input name="email" type="email" inputmode="email" value="${esc(q.email)}"></label></div>
     <label>Indirizzo del lavoro<input name="address" placeholder="Via, numero, città" value="${esc(q.address)}"></label>
@@ -146,7 +152,7 @@ function quoteForm(q) {
       <button type="button" class="btn" data-add="oth">+ Altra voce</button></div>
 
     <div class="row"><label>Sconto (€)<input name="discount" inputmode="decimal" placeholder="0,00" value="${numIn(q.discount)}"></label>
-      <label>IVA<select name="iva">${IVA_OPTS.map(([v, l]) => opt(v, q.iva, l)).join('')}</select></label></div>
+      <label>IVA<select name="iva">${IVA_OPTS.map(([v, l]) => opt(v, q.iva, l)).join('')}</select></label></div>${IVA_HINT}
     <div class="totbox"><span>Totale preventivo</span><span id="qTot">${eur(quoteTotals(q).tot)}</span></div>
 
     <div class="row"><label>Validità (giorni)<input name="validity" inputmode="numeric" value="${esc(q.validity)}"></label>
@@ -203,6 +209,7 @@ function quoteForm(q) {
           .filter(l => (l.desc || '').trim().toLowerCase() === v && num(l.price)).sort((a, b) => b.c - a.c)[0];
         if (prev && !f['lp_' + i].value) { f['lp_' + i].value = numIn(prev.price); f['lu_' + i].value = prev.unit || 'pz'; }
       });
+      clientPicker(f, q);
       // Cliente già noto → telefono, email e indirizzo
       f.client.addEventListener('change', () => {
         const name = f.client.value.trim().toLowerCase(); if (!name) return;
@@ -215,19 +222,6 @@ function quoteForm(q) {
 }
 
 /* ---------- I tuoi dati (intestazione del PDF) ---------- */
-function readLogo(file) {
-  return new Promise((res, rej) => {
-    const img = new Image(), url = URL.createObjectURL(file);
-    img.onload = () => {
-      const k = Math.min(1, 500 / Math.max(img.width, img.height));
-      const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
-      URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', 0.88));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('img')); };
-    img.src = url;
-  });
-}
 function bizForm() {
   const B = biz();
   const body = `
@@ -239,10 +233,6 @@ function bizForm() {
     <div class="row"><label>Telefono<input name="phone" type="tel" value="${esc(B.phone)}"></label>
       <label>Email<input name="email" type="email" inputmode="email" value="${esc(B.email)}"></label></div>
     <label>IBAN (per i bonifici)<input name="iban" value="${esc(B.iban)}" style="text-transform:uppercase"></label>
-    <label>Logo (facoltativo)</label>
-    <div class="logo-box">${B.logo ? `<img src="${B.logo}" alt="Logo">` : '<span class="muted small">Nessun logo</span>'}
-      <label class="btn" style="margin:0;color:var(--accent)">Scegli immagine<input type="file" accept="image/*" id="logoIn" hidden></label>
-      ${B.logo ? '<button type="button" class="btn danger" id="logoRm">Togli</button>' : ''}</div>
     <div class="sec" style="margin:18px 0 8px">Valori proposti nei nuovi preventivi</div>
     <div class="row"><label>Tariffa oraria (€/h)<input name="rate" inputmode="decimal" placeholder="Es. 35" value="${numIn(B.rate)}"></label>
       <label>Validità (giorni)<input name="validity" inputmode="numeric" value="${esc(B.validity)}"></label></div>
@@ -255,22 +245,7 @@ function bizForm() {
       name: d.name.trim(), address: d.address.trim(), piva: d.piva.trim(), cf: d.cf.trim().toUpperCase(), phone: d.phone.trim(), email: d.email.trim(),
       iban: d.iban.replace(/\s+/g, ' ').trim().toUpperCase(), rate: num(d.rate), validity: d.validity.trim(), iva: d.iva, payment: d.payment.trim(), notes: d.notes.trim()
     }),
-    empty: () => false, add: () => {}, remove: () => {},
-    init: f => {
-      const redrawLogo = () => {
-        const box = f.querySelector('.logo-box'), L = biz().logo;
-        box.querySelector('img, span.muted').outerHTML = L ? `<img src="${L}" alt="Logo">` : '<span class="muted small">Nessun logo</span>';
-        const rmB = box.querySelector('#logoRm');
-        if (L && !rmB) box.insertAdjacentHTML('beforeend', '<button type="button" class="btn danger" id="logoRm">Togli</button>');
-        if (!L && rmB) rmB.remove();
-      };
-      f.addEventListener('change', async e => {
-        if (e.target.id !== 'logoIn' || !e.target.files[0]) return;
-        try { biz().logo = await readLogo(e.target.files[0]); save(); redrawLogo(); toast('Logo salvato'); }
-        catch (err) { alert('Immagine non valida.'); }
-      });
-      f.addEventListener('click', e => { if (e.target.id === 'logoRm') { delete biz().logo; save(); redrawLogo(); } });
-    }
+    empty: () => false, add: () => {}, remove: () => {}
   });
 }
 
@@ -298,17 +273,13 @@ function quotePdf(q, jspdf) {
   const need = h => { if (y + h > BOTTOM) { doc.addPage(); y = M + 4; return true; } return false; };
 
   // Intestazione: chi fa il preventivo
-  let logoH = 0;
-  if (B.logo) {
-    try { const p = doc.getImageProperties(B.logo); let h = 22, w = h * p.width / p.height; if (w > 50) { w = 50; h = w * p.height / p.width; } doc.addImage(B.logo, 'JPEG', R - w, y, w, h); logoH = h; } catch (e) {}
-  }
-  const headW = B.logo ? 120 : 180;
+  const headW = 180;
   font('bold', 15, 20); const nameL = wrap(B.name || 'Il tuo nome / ditta', headW); doc.text(nameL, M, y + 6);
   let hy = y + 6 + nameL.length * 6;
   font('normal', 9, 90);
   [B.address, [B.piva && 'P.IVA ' + B.piva, B.cf && 'C.F. ' + B.cf].filter(Boolean).join('  ·  '), [B.phone && 'Tel. ' + B.phone, B.email].filter(Boolean).join('  ·  ')]
     .filter(Boolean).forEach(l => { wrap(l, headW).forEach(t => { doc.text(t, M, hy); hy += 4.3; }); });
-  y = Math.max(hy, y + logoH) + 3;
+  y = hy + 3;
   doc.setDrawColor(...ACC); doc.setLineWidth(0.7); doc.line(M, y, R, y); y += 10;
 
   // Titolo e cliente
