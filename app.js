@@ -268,7 +268,6 @@ function viewJob(j) {
   const mc = sum(mats.map(matTotal)), mins = jobMinutes(j), amount = num(j.amount);
   const margin = amount - mc, perH = mins > 0 ? margin / (mins / 60) : 0;
   const [lab, col] = STATUS[j.status] || STATUS.programmato;
-  const mapUrl = j.address ? 'https://maps.apple.com/?q=' + encodeURIComponent(j.address) : '';
   return {
     title: 'Lavoro',
     html: `<div class="card jh">
@@ -279,7 +278,7 @@ function viewJob(j) {
       ${j.address ? `<div class="muted small">${esc(j.address)}</div>` : ''}
       <div class="actions">
         ${j.phone ? `<a class="btn" href="tel:${esc(j.phone.replace(/[^\d+]/g, ''))}">${ICON.phone} Chiama</a>` : ''}
-        ${mapUrl ? `<a class="btn" href="${mapUrl}" target="_blank" rel="noopener">${ICON.map} Mappa</a>` : ''}
+        ${j.address ? `<button class="btn" data-a="mapChoice" data-id="${j.id}">${ICON.map} Mappa</button>` : ''}
         <button class="btn" data-a="editJob" data-id="${j.id}">${ICON.edit} Modifica</button>
         ${j.status === 'programmato' ? `<button class="btn green" data-a="completeJob" data-id="${j.id}">${ICON.check} Completato</button>` : ''}
       </div></div>
@@ -700,6 +699,20 @@ const A = {
   period: id => { S.period = id; render(); },
   filter: id => { S.filter = id; render(); },
   matMode: id => { S.matMode = id; render(); },
+  mapChoice: id => {
+    const j = getJob(id); if (!j || !j.address) return;
+    const a = encodeURIComponent(j.address);
+    const el = document.createElement('div');
+    el.className = 'ask-wrap';
+    el.innerHTML = `<div class="ask" role="dialog" aria-label="Apri indirizzo">
+      <h2>Come vuoi arrivarci?</h2><p>${esc(j.address)}</p>
+      <a class="btn solid full" href="https://www.google.com/maps/dir/?api=1&destination=${a}" target="_blank" rel="noopener">Google Maps</a>
+      <a class="btn full" href="https://maps.apple.com/?daddr=${a}" target="_blank" rel="noopener">Mappe di Apple</a>
+      <a class="btn full" href="https://waze.com/ul?q=${a}&navigate=yes" target="_blank" rel="noopener">Waze</a>
+      <button type="button" class="btn full" data-no style="background:var(--line);color:var(--text)">Annulla</button></div>`;
+    document.body.appendChild(el);
+    el.addEventListener('click', e => { if (e.target === el || e.target.closest('a,[data-no]')) setTimeout(() => el.remove(), 50); });
+  },
   hideInstall: () => { db.settings.hideInstall = true; save(); render(); },
   exportJson: async () => {
     const ok = await shareFile(`backup-idraulico-${stamp()}.json`, JSON.stringify(db, null, 1), 'application/json');
