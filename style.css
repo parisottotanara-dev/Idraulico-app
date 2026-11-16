@@ -153,3 +153,9 @@ textarea{min-height:80px;resize:vertical}
 .toast{position:fixed;left:50%;bottom:calc(var(--tabh) + var(--safe-b) + 90px);transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:99px;font-size:14px;font-weight:600;z-index:60;animation:fade .2s}
 .sheet-head .saved{min-width:80px;font-size:14px;font-weight:600;color:var(--green)}
 .sheet-head .link{min-width:80px;text-align:right}
+.ask-wrap{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.5);display:grid;place-items:center;padding:24px;animation:fade .15s}
+.ask{width:100%;max-width:360px;background:var(--card);border-radius:20px;padding:22px 18px 16px;text-align:center;animation:up .2s ease-out}
+.ask-icon{width:48px;height:48px;margin:0 auto 10px;border-radius:50%;background:var(--red-soft);color:var(--red);display:grid;place-items:center;font-size:26px;font-weight:800}
+.ask h2{margin:0 0 6px;font-size:19px}
+.ask p{margin:0 0 8px;color:var(--muted);font-size:15px}
+.ask .btn{padding:13px;font-size:16px}

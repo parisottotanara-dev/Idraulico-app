@@ -451,6 +451,22 @@ function render() {
 }
 
 /* ================= Moduli (fogli) ================= */
+/* Richiesta di conferma ben visibile (al posto della finestrella di sistema) */
+function askConfirm(title, text, okLabel = 'Elimina') {
+  return new Promise(resolve => {
+    const el = document.createElement('div');
+    el.className = 'ask-wrap';
+    el.innerHTML = `<div class="ask" role="alertdialog" aria-label="${esc(title)}">
+      <div class="ask-icon">!</div><h2>${esc(title)}</h2><p>${esc(text)}</p>
+      <button type="button" class="btn danger full" data-ok>${esc(okLabel)}</button>
+      <button type="button" class="btn full" data-no>Annulla, non eliminare</button></div>`;
+    document.body.appendChild(el);
+    const done = v => { el.remove(); resolve(v); };
+    el.querySelector('[data-ok]').onclick = () => done(true);
+    el.querySelector('[data-no]').onclick = () => done(false);
+    el.addEventListener('click', e => { if (e.target === el) done(false); });
+  });
+}
 /* Moduli con salvataggio automatico: ogni modifica viene salvata subito, senza tasto "Salva". */
 function readForm(form) {
   const v = {};
@@ -493,9 +509,9 @@ function openSheet(title, body, cfg) {
   };
   el.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
   el.addEventListener('click', e => { if (e.target === el) close(); });
-  el.querySelector('[data-del]').onclick = () => {
+  el.querySelector('[data-del]').onclick = async () => {
     if (!inserted) { el.remove(); document.body.style.overflow = ''; render(); return; }
-    if (confirm(cfg.delMsg || 'Eliminare definitivamente?')) {
+    if (await askConfirm(cfg.delTitle || 'Sei sicuro di voler eliminare?', (typeof cfg.delMsg === 'function' ? cfg.delMsg() : cfg.delMsg) || 'Non si potrà più recuperare.')) {
       cfg.remove(); save();
       el.remove(); document.body.style.overflow = ''; render(); toast('Eliminato');
     }
@@ -541,7 +557,8 @@ function jobForm(j, presetDate) {
     add: () => db.jobs.push(j),
     remove: () => { db.materials = db.materials.filter(m => m.jobId !== j.id); db.jobs = db.jobs.filter(x => x !== j); if (S.jobId === j.id) S.jobId = null; },
     after: () => { S.day = j.date; const dd = parseISO(j.date); S.cy = dd.getFullYear(); S.cm = dd.getMonth(); },
-    delMsg: 'Eliminare questo lavoro e i materiali collegati?',
+    delTitle: 'Eliminare questo lavoro?',
+    delMsg: () => `"${j.title || 'Lavoro'}"${j.client ? ' di ' + j.client : ''} verrà eliminato insieme ai materiali collegati. Non si potrà più recuperare.`,
     init: f => {
       // Se scegli un cliente già noto, compila telefono e indirizzo
       f.client.addEventListener('change', () => {
@@ -577,6 +594,8 @@ function matForm(m, jobId) {
     empty: () => !(m.name || m.brand || m.unitCost || m.supplier || m.notes),
     add: () => db.materials.push(m),
     remove: () => { db.materials = db.materials.filter(x => x !== m); },
+    delTitle: 'Eliminare questo materiale?',
+    delMsg: () => `"${m.name || 'Materiale'}"${m.brand ? ' (' + m.brand + ')' : ''} verrà eliminato. Non si potrà più recuperare.`,
     init: f => {
       const upd = () => { $('#mTot').textContent = eur(num(f.qty.value) * num(f.unitCost.value)); };
       f.qty.addEventListener('input', upd); f.unitCost.addEventListener('input', upd);
@@ -611,6 +630,8 @@ function moveForm(v) {
     empty: () => !(v.amount || v.category || v.desc),
     add: () => db.moves.push(v),
     remove: () => { db.moves = db.moves.filter(x => x !== v); },
+    delTitle: 'Eliminare questo movimento?',
+    delMsg: () => `${v.type === 'in' ? 'Entrata' : 'Uscita'} di ${eur(v.amount)}${v.desc ? ' – ' + v.desc : ''} verrà eliminata. Non si potrà più recuperare.`,
     after: () => { const dd = parseISO(v.date); S.my = dd.getFullYear(); S.mm = dd.getMonth(); }
   });
 }
@@ -691,8 +712,8 @@ const A = {
       rows.push([f.date, f.type === 'in' ? 'Entrata' : 'Uscita', f.label, f.sub, (f.type === 'in' ? '' : '-') + f.amount.toFixed(2).replace('.', ',')]));
     shareFile(`movimenti-${stamp()}.csv`, '﻿' + rows.map(r => r.map(csvCell).join(';')).join('\r\n'), 'text/csv');
   },
-  wipe: () => {
-    if (!confirm('Cancellare TUTTI i dati? Fai prima un backup!')) return;
+  wipe: async () => {
+    if (!(await askConfirm('Cancellare TUTTI i dati?', 'Verranno eliminati tutti i lavori, i materiali e i movimenti. Fai prima un backup!', 'Cancella tutto'))) return;
     if (prompt('Per confermare scrivi CANCELLA') !== 'CANCELLA') return;
     db = normalize(); save(); render(); toast('Dati cancellati');
   }
