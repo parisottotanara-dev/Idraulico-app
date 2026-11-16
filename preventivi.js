@@ -11,6 +11,7 @@ const IVA_OPTS = [
   ['10', 'IVA 10% – manutenzione/riparazione in casa di privati'],
   ['4', 'IVA 4% – impianti nella costruzione di prima casa'],
   ['forf', 'Senza IVA – regime forfettario'],
+  ['occ', 'Senza IVA – prestazione occasionale'],
   ['0', 'Senza IVA (altro motivo)']];
 const IVA_HINT = `<p class="muted small" style="margin:-6px 0 12px">10% solo per manutenzione e riparazioni in abitazioni di privati (per caldaie, sanitari e rubinetteria il 10% vale fino al valore della manodopera). Nel dubbio chiedi al commercialista.</p>`;
 const UNITS_Q = ['pz', 'm', 'h', 'a corpo', 'kg', 'l', 'conf'];
@@ -27,7 +28,7 @@ function biz() {
 }
 const getQuote = id => db.quotes.find(q => q.id === id);
 const quoteJob = q => db.jobs.find(j => j.quoteId === q.id);
-const ivaRate = q => (q.iva === 'forf' || q.iva === '0') ? 0 : num(q.iva);
+const ivaRate = q => (q.iva === 'forf' || q.iva === '0' || q.iva === 'occ') ? 0 : num(q.iva);
 const lineTotal = l => num(l.qty) * num(l.price);
 const lineCost = l => num(l.qty) * num(l.cost); // quanto lo paghi tu: NON va nel PDF
 const lineMarginTxt = l => num(l.cost) ? `Tuo costo ${eur(lineCost(l))} · utile ${eur(lineTotal(l) - lineCost(l))}` : (l.unit === 'h' ? 'Manodopera: tutto utile' : 'Scrivi il tuo costo per vedere l\'utile');
@@ -36,7 +37,9 @@ function quoteTotals(q) {
   const disc = Math.min(Math.max(0, num(q.discount)), imp);
   const base = imp - disc, iva = Math.round(base * ivaRate(q)) / 100;
   const cost = sum((q.lines || []).map(lineCost)), profit = base - cost;
-  return { imp, disc, base, iva, tot: base + iva, cost, profit, pct: base > 0 ? profit / base * 100 : 0 };
+  // Prestazione occasionale verso aziende/professionisti: il cliente trattiene il 20% (ritenuta d'acconto)
+  const rit = q.iva === 'occ' && q.ritenuta ? Math.round(base * 20) / 100 : 0;
+  return { imp, disc, base, iva, tot: base + iva, rit, pay: base + iva - rit, cost, profit, pct: base > 0 ? profit / base * 100 : 0 };
 }
 function nextQuoteNumber() {
   const y = new Date().getFullYear();
@@ -103,8 +106,10 @@ function viewQuote(q) {
     <div class="card">
       <div class="kv"><span>Imponibile</span><span>${eur(t.imp)}</span></div>
       ${t.disc ? `<div class="kv"><span>Sconto</span><span class="out">−${eur(t.disc)}</span></div>` : ''}
-      <div class="kv"><span>${ivaRate(q) ? 'IVA ' + ivaRate(q) + '%' : (q.iva === 'forf' ? 'Regime forfettario (senza IVA)' : 'Senza IVA')}</span><span>${eur(t.iva)}</span></div>
+      <div class="kv"><span>${ivaRate(q) ? 'IVA ' + ivaRate(q) + '%' : (q.iva === 'forf' ? 'Regime forfettario (senza IVA)' : q.iva === 'occ' ? 'Prestazione occasionale (senza IVA)' : 'Senza IVA')}</span><span>${eur(t.iva)}</span></div>
       <div class="kv" style="font-size:19px"><span><b>Totale</b></span><span><b>${eur(t.tot)}</b></span></div>
+      ${t.rit ? `<div class="kv"><span>Ritenuta d'acconto 20% (la versa il cliente)</span><span class="out">−${eur(t.rit)}</span></div>
+      <div class="kv" style="font-size:17px"><span><b>Netto che ricevi</b></span><span><b>${eur(t.pay)}</b></span></div>` : ''}
     </div>
     <div class="card mine-card"><h3>Solo per te · non compare nel PDF</h3>
       <div class="kv"><span>Incasso senza IVA</span><span>${eur(t.base)}</span></div>
@@ -166,6 +171,9 @@ function quoteForm(q) {
 
     <div class="row"><label>Sconto (€)<input name="discount" inputmode="decimal" placeholder="0,00" value="${numIn(q.discount)}"></label>
       <label>IVA<select name="iva">${IVA_OPTS.map(([v, l]) => opt(v, q.iva, l)).join('')}</select></label></div>${IVA_HINT}
+    <div id="occBox" ${q.iva === 'occ' ? '' : 'hidden'}>
+      <label class="check"><input type="checkbox" name="ritenuta" ${q.ritenuta ? 'checked' : ''}> Il cliente è un'azienda o un professionista: ritenuta d'acconto 20%</label>
+      <p class="muted small" style="margin:6px 0 12px">Con un cliente privato non c'è ritenuta. La prestazione occasionale va bene solo per lavori saltuari (non abituali): verifica con il commercialista.</p></div>
     <div class="totbox"><span>Totale preventivo</span><span id="qTot">${eur(quoteTotals(q).tot)}</span></div>
     <div class="totbox mine-box"><span>Il tuo utile <small>(solo per te)</small></span><span id="qProfit">${eur(quoteTotals(q).profit)}</span></div>
 
@@ -184,7 +192,8 @@ function quoteForm(q) {
       Object.assign(q, {
         number: d.number.trim(), date: d.date, client: d.client.trim(), phone: d.phone.trim(), email: d.email.trim(), address: d.address.trim(),
         title: d.title.trim(), description: d.description.trim(), lines, discount: num(d.discount), iva: d.iva,
-        validity: d.validity.trim(), timing: d.timing.trim(), payment: d.payment.trim(), notes: d.notes.trim(), status: d.status
+        validity: d.validity.trim(), timing: d.timing.trim(), payment: d.payment.trim(), notes: d.notes.trim(), status: d.status,
+        ritenuta: d.iva === 'occ' && !!d.ritenuta
       });
     },
     empty: () => !(q.client || q.title || q.description || q.phone || q.address || q.lines.some(l => l.desc || l.price)),
@@ -201,6 +210,7 @@ function quoteForm(q) {
         const t = quoteTotals(q); $('#qProfit').textContent = `${eur(t.profit)}${t.base > 0 ? ' (' + Math.round(t.pct) + '%)' : ''}`;
       }, 0);
       f.addEventListener('input', refresh); f.addEventListener('change', refresh);
+      f.iva.addEventListener('change', () => { f.querySelector('#occBox').hidden = f.iva.value !== 'occ'; });
       const redraw = focusLast => {
         box.innerHTML = q.lines.map(lineRow).join('');
         f.dispatchEvent(new Event('change'));
@@ -369,14 +379,18 @@ function quotePdf(q, jspdf) {
   if (T.disc) row('Sconto', '- ' + pdfMoney(T.disc));
   if (T.disc) row('Imponibile scontato', pdfMoney(T.base));
   if (ivaRate(q)) row('IVA ' + ivaRate(q) + '%', pdfMoney(T.iva));
-  else row(q.iva === 'forf' ? 'IVA (regime forfettario)' : 'IVA', pdfMoney(0));
+  else if (q.iva !== 'occ') row(q.iva === 'forf' ? 'IVA (regime forfettario)' : 'IVA', pdfMoney(0));
   y += 1;
   doc.setFillColor(...ACC); doc.roundedRect(tl - 4, y - 5, R - tl + 4, 10, 1.5, 1.5, 'F');
-  font('bold', 12, 255); doc.text('TOTALE', tl, y + 1.6); doc.text(pdfMoney(T.tot), R - 2, y + 1.6, { align: 'right' });
-  y += 13;
+  font('bold', 12, 255); doc.text(T.rit ? 'COMPENSO LORDO' : 'TOTALE', tl, y + 1.6); doc.text(pdfMoney(T.tot), R - 2, y + 1.6, { align: 'right' });
+  y += 11;
+  if (T.rit) { row("Ritenuta d'acconto 20%", '- ' + pdfMoney(T.rit)); row('Netto a pagare', pdfMoney(T.pay), true); }
+  y += 2;
 
   // Condizioni
   const cond = [];
+  if (q.iva === 'occ') cond.push('Prestazione occasionale ai sensi dell\'art. 67, comma 1, lett. l) del D.P.R. 917/1986, fuori dal campo di applicazione IVA ai sensi dell\'art. 5 del D.P.R. 633/1972 per mancanza di abitualità.'
+    + (T.rit ? ' Il committente, in qualità di sostituto d\'imposta, opererà la ritenuta d\'acconto del 20% ai sensi dell\'art. 25 del D.P.R. 600/1973.' : ''));
   if (q.iva === 'forf') cond.push('Operazione in franchigia da IVA ai sensi dell\'art. 1, commi 54-89, Legge n. 190/2014 (regime forfettario).');
   if (q.validity) cond.push(`Validità dell'offerta: ${q.validity} giorni${q.date ? ' dalla data del preventivo' : ''}.`);
   if (q.timing) cond.push('Tempi di esecuzione: ' + q.timing + '.');
@@ -459,6 +473,27 @@ function chooseCreate() {
     if (b && b.dataset.k === 'quote') quoteForm();
   });
 }
+/** Quando un lavoro nasce da un preventivo, i materiali con il "tuo costo" diventano spese del lavoro
+    (così compaiono in Materiali, Soldi e Riepilogo e l'utile è quello vero). Lo fa una sola volta per lavoro. */
+function addQuoteMaterials(j) {
+  const q = j && j.quoteId && getQuote(j.quoteId);
+  if (!q || db.materials.some(m => m.jobId === j.id && m.fromQuote === q.id)) return 0;
+  const lines = (q.lines || []).filter(l => num(l.cost) > 0 && (l.desc || '').trim());
+  lines.forEach(l => db.materials.push({
+    id: uid(), name: l.desc.trim(), brand: '', qty: num(l.qty) || 1, unit: l.unit || 'pz', unitCost: num(l.cost),
+    date: j.date || today(), supplier: '', jobId: j.id, notes: 'Dal preventivo N. ' + q.number, fromQuote: q.id
+  }));
+  return lines.length;
+}
+// Lavori già creati da un preventivo prima di questa funzione: aggiunge i materiali (solo se il lavoro non ne ha)
+(function migrateQuoteMaterials() {
+  if (db.settings.qMatDone) return;
+  let n = 0;
+  db.jobs.forEach(j => { if (j.quoteId && !db.materials.some(m => m.jobId === j.id)) n += addQuoteMaterials(j); });
+  db.settings.qMatDone = true; save();
+  if (n) render();
+})();
+
 Object.assign(A, {
   lavMode: id => { S.lavMode = id; render(); },
   qFilter: id => { S.qf = id; render(); },

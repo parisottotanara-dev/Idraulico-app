@@ -648,6 +648,7 @@ function jobForm(j, presetDate, fromQuote) {
     after: () => {
       S.day = j.date; const dd = parseISO(j.date); S.cy = dd.getFullYear(); S.cm = dd.getMonth();
       const q = j.quoteId && getQuote(j.quoteId); if (q && q.status !== 'accettato') { q.status = 'accettato'; save(); }
+      const n = addQuoteMaterials(j); if (n) { save(); toast(`Aggiunt${n === 1 ? 'o 1 materiale' : 'i ' + n + ' materiali'} dal preventivo (spese)`); }
     },
     remove: () => { db.materials = db.materials.filter(m => m.jobId !== j.id); db.jobs = db.jobs.filter(x => x !== j); if (S.jobId === j.id) S.jobId = null; },
     delTitle: 'Eliminare questo lavoro?',
@@ -658,7 +659,7 @@ function jobForm(j, presetDate, fromQuote) {
         const q = f.quoteId && getQuote(f.quoteId.value); if (!q) return;
         f.title.value = q.title || f.title.value; f.client.value = q.client || f.client.value;
         f.phone.value = q.phone || f.phone.value; f.address.value = q.address || f.address.value;
-        f.amount.value = numIn(quoteTotals(q).tot);
+        f.amount.value = numIn(quoteTotals(q).tot); // lordo: l'eventuale ritenuta è un anticipo di tasse, non un costo
         const voci = (q.lines || []).filter(l => l.desc).map(l => `- ${l.desc}${num(l.qty) !== 1 ? ' (' + numIn(num(l.qty)) + ' ' + (l.unit || '') + ')' : ''}`).join('\n');
         f.notes.value = [`Da preventivo N. ${q.number}`, q.description, voci].filter(Boolean).join('\n\n');
       };
