@@ -165,11 +165,14 @@ function jobItem(j, showDate = true) {
   const [lab, col] = STATUS[j.status] || STATUS.programmato;
   const money = num(j.amount) > 0
     ? `<div class="r num ${j.paid ? 'in' : ''}">${eur(j.amount)}<small>${j.paid ? 'Pagato' : (j.status === 'annullato' ? '' : 'Da incassare')}</small></div>` : '';
-  return `<button class="item" data-a="openJob" data-id="${j.id}">
+  return `<div class="swipe${j.important ? ' imp' : ''}">
+    <button class="sw-act sw-left" data-a="toggleImp" data-id="${j.id}" tabindex="-1">${ICON.star}<span>${j.important ? 'Non importante' : 'Importante'}</span></button>
+    <button class="sw-act sw-right" data-a="delJob" data-id="${j.id}" tabindex="-1">${ICON.trash}<span>Elimina</span></button>
+    <button class="item sw-front" data-a="openJob" data-id="${j.id}">
     <div class="time">${showDate ? `<div class="small">${esc(fmtDate(j.date, { day: 'numeric', month: 'short' }))}</div>` : ''}${esc(j.time || (showDate ? '' : '—'))}</div>
-    <div class="main"><div class="t">${esc(j.title || 'Lavoro')}</div>
+    <div class="main"><div class="t">${j.important ? '<span class="star">★</span> ' : ''}${esc(j.title || 'Lavoro')}</div>
       <div class="s">${j.client ? esc(j.client) + ' · ' : ''}<span class="chip ${col}">${lab}</span>${j.timerStart ? ' <span class="chip amber">⏱ in corso</span>' : ''}</div></div>
-    ${money}</button>`;
+    ${money}</button></div>`;
 }
 function flowItem(f) {
   return `<button class="item" data-a="openFlow" data-id="${f.kind}:${f.ref}">
@@ -188,6 +191,8 @@ function timerBanner() {
     `<button class="timerbar" data-a="openJob" data-id="${j.id}"><span class="pulse"></span><span style="flex:1">${esc(j.title)}</span><span data-timer="${j.id}">${fmtMin(jobMinutes(j))}</span></button>`).join('');
 }
 const ICON = {
+  star: '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v6M14 11v6"/></svg>',
   phone: '<svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>',
   map: '<svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
   edit: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg>',
@@ -238,6 +243,7 @@ function jobsList() {
   if (S.filter === 'programmati') list = list.filter(j => j.status === 'programmato');
   if (S.filter === 'completati') list = list.filter(j => j.status === 'completato');
   if (S.filter === 'incassare') list = list.filter(isUnpaid);
+  if (S.filter === 'importanti') list = list.filter(j => j.important);
   if (q) list = list.filter(j => [j.title, j.client, j.address, j.notes, j.phone].join(' ').toLowerCase().includes(q));
   list.sort((a, b) => byDateTime(b, a));
   if (!list.length) return `<div class="list"><div class="empty">${db.jobs.length ? 'Nessun lavoro trovato.' : 'Nessun lavoro ancora.<br>Tocca + per aggiungerne uno.'}</div></div>`;
@@ -255,7 +261,7 @@ function jobsList() {
 }
 function viewLavori() {
   const unpaid = db.jobs.filter(isUnpaid);
-  const f = [['tutti', 'Tutti'], ['programmati', 'Da fare'], ['completati', 'Fatti'], ['incassare', `Da incassare${unpaid.length ? ' (' + unpaid.length + ')' : ''}`]];
+  const f = [['tutti', 'Tutti'], ['programmati', 'Da fare'], ['completati', 'Fatti'], ['incassare', `Da incassare${unpaid.length ? ' (' + unpaid.length + ')' : ''}`], ['importanti', '★ Importanti']];
   return {
     title: 'Lavori',
     html: `<input id="q" class="search" type="search" placeholder="Cerca cliente, lavoro, indirizzo…" value="${esc(S.q)}">
@@ -274,7 +280,7 @@ function viewJob(j) {
     html: `<div class="card jh">
       <h2>${esc(j.title || 'Lavoro')}</h2>
       <div class="muted">${esc(fmtDateLong(j.date))}${j.time ? ' · ore ' + esc(j.time) : ''}</div>
-      <div style="margin-top:6px"><span class="chip ${col}">${lab}</span> ${j.paid ? '<span class="chip green">Pagato</span>' : amount > 0 && j.status !== 'annullato' ? '<span class="chip amber">Da incassare</span>' : ''}</div>
+      <div style="margin-top:6px">${j.important ? '<span class="chip amber">★ Importante</span> ' : ''}<span class="chip ${col}">${lab}</span> ${j.paid ? '<span class="chip green">Pagato</span>' : amount > 0 && j.status !== 'annullato' ? '<span class="chip amber">Da incassare</span>' : ''}</div>
       ${j.client ? `<div style="margin-top:10px;font-weight:600">${esc(j.client)}</div>` : ''}
       ${j.address ? `<div class="muted small">${esc(j.address)}</div>` : ''}
       <div class="actions">
@@ -443,6 +449,7 @@ function viewRiepilogo() {
 const VIEWS = { agenda: viewAgenda, lavori: viewLavori, soldi: viewSoldi, materiali: viewMateriali, riepilogo: viewRiepilogo };
 
 function render() {
+  openSwipe = null; drag = null;
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.id === S.tab));
   let v;
   if (S.jobId) {
@@ -733,6 +740,18 @@ const A = {
     if (!(await askConfirm('Azzerare il tempo?', `Il tempo di questo lavoro (${fmtMin(jobMinutes(j))}) tornerà a zero.`, 'Azzera', 'Annulla'))) return;
     j.minutes = 0; j.timerStart = null; save(); render();
   },
+  toggleImp: id => {
+    const j = getJob(id); if (!j) return;
+    j.important = !j.important; save(); render();
+    toast(j.important ? '★ Segnato come importante' : 'Tolto da importanti');
+  },
+  delJob: async id => {
+    const j = getJob(id); if (!j) return;
+    closeSwipe();
+    if (!(await askConfirm('Eliminare questo lavoro?', `"${j.title || 'Lavoro'}"${j.client ? ' di ' + j.client : ''} verrà eliminato insieme ai materiali collegati. Non si potrà più recuperare.`))) return;
+    db.materials = db.materials.filter(m => m.jobId !== id); db.jobs = db.jobs.filter(x => x !== j);
+    save(); render(); toast('Lavoro eliminato');
+  },
   hideInstall: () => { db.settings.hideInstall = true; save(); render(); },
   exportJson: async () => {
     const ok = await shareFile(`backup-idraulico-${stamp()}.json`, JSON.stringify(db, null, 1), 'application/json');
@@ -753,11 +772,56 @@ const A = {
 };
 
 document.addEventListener('click', e => {
+  if (Date.now() < swipeBlockUntil && !e.target.closest('.sw-act')) { e.preventDefault(); e.stopPropagation(); return; }
+  // Con una riga aperta, un tocco altrove la richiude e basta
+  if (openSwipe && !e.target.closest('.sw-act')) { e.preventDefault(); closeSwipe(); return; }
   const t = e.target.closest('[data-a]');
   if (!t || t.closest('.sheet-wrap')) return;
   const fn = A[t.dataset.a];
   if (fn) { e.preventDefault(); fn(t.dataset.id, t); }
 });
+/* ===== Scorrimento delle righe dei lavori (come su iPhone) =====
+   verso sinistra → Elimina, verso destra → Importante. Poi si tocca il pulsante comparso. */
+const SW = 92;
+let openSwipe = null, swipeBlockUntil = 0, drag = null;
+function setX(front, x, anim) { front.style.transition = anim ? 'transform .22s ease' : 'none'; front.style.transform = x ? `translateX(${x}px)` : ''; }
+function closeSwipe() { if (openSwipe) { setX(openSwipe, 0, true); openSwipe.parentElement.classList.remove('open-l', 'open-r'); openSwipe = null; } }
+document.addEventListener('pointerdown', e => {
+  const front = e.target.closest('.sw-front');
+  if (!front || e.button > 0) return;
+  if (openSwipe && openSwipe !== front) closeSwipe();
+  const start = openSwipe === front ? (front.parentElement.classList.contains('open-l') ? SW : -SW) : 0;
+  drag = { front, x0: e.clientX, y0: e.clientY, start, dx: 0, active: false, id: e.pointerId };
+});
+document.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+  if (!drag.active) {
+    if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { drag = null; return; } // sta scorrendo la pagina
+    if (Math.abs(dx) < 10) return;
+    drag.active = true;
+  }
+  let x = drag.start + dx;
+  if (Math.abs(x) > SW) x = Math.sign(x) * (SW + (Math.abs(x) - SW) * 0.3); // un po' di resistenza
+  drag.dx = x;
+  const row = drag.front.parentElement;
+  row.classList.toggle('open-l', x > 0); row.classList.toggle('open-r', x < 0);
+  setX(drag.front, x, false);
+});
+function endDrag(e) {
+  if (!drag || (e && e.pointerId !== drag.id)) return;
+  const d = drag; drag = null;
+  if (!d.active) return;
+  swipeBlockUntil = Date.now() + 350;
+  const row = d.front.parentElement;
+  if (d.dx > SW / 2) { setX(d.front, SW, true); row.classList.add('open-l'); row.classList.remove('open-r'); openSwipe = d.front; }
+  else if (d.dx < -SW / 2) { setX(d.front, -SW, true); row.classList.add('open-r'); row.classList.remove('open-l'); openSwipe = d.front; }
+  else { setX(d.front, 0, true); row.classList.remove('open-l', 'open-r'); if (openSwipe === d.front) openSwipe = null; }
+}
+document.addEventListener('pointerup', endDrag);
+document.addEventListener('pointercancel', endDrag);
+document.addEventListener('scroll', () => closeSwipe(), { passive: true });
+
 // Aggiorna i conti quando ha finito di scrivere il tempo (non mentre passa da Ore a Minuti)
 document.addEventListener('change', e => {
   if (e.target.id === 'tH' || e.target.id === 'tM')
