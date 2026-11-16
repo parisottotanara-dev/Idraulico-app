@@ -44,6 +44,7 @@ function normalize(d) {
   return {
     version: 1, savedAt: d.savedAt || 0,
     jobs: Array.isArray(d.jobs) ? d.jobs : [],
+    quotes: Array.isArray(d.quotes) ? d.quotes : [],
     materials: Array.isArray(d.materials) ? d.materials : [],
     moves: Array.isArray(d.moves) ? d.moves : [],
     settings: Object.assign({ lastBackup: null, hideInstall: false }, d.settings || {})
@@ -152,7 +153,7 @@ function stats(from, to) {
 /* ================= Stato interfaccia ================= */
 const N = new Date();
 const S = {
-  tab: 'agenda', jobId: null,
+  tab: 'agenda', jobId: null, quoteId: null, lavMode: 'lavori', qq: '', qf: 'tutti',
   cy: N.getFullYear(), cm: N.getMonth(), day: today(),
   filter: 'tutti', q: '',
   my: N.getFullYear(), mm: N.getMonth(),
@@ -191,6 +192,10 @@ function timerBanner() {
     `<button class="timerbar" data-a="openJob" data-id="${j.id}"><span class="pulse"></span><span style="flex:1">${esc(j.title)}</span><span data-timer="${j.id}">${fmtMin(jobMinutes(j))}</span></button>`).join('');
 }
 const ICON = {
+  share: '<svg viewBox="0 0 24 24"><path d="M12 15V3.5M8 7.5l4-4 4 4M5 11v8.5h14V11"/></svg>',
+  download: '<svg viewBox="0 0 24 24"><path d="M12 3.5V15M8 11l4 4 4-4M5 19.5h14"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
+  doc: '<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></svg>',
   star: '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v6M14 11v6"/></svg>',
   phone: '<svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>',
@@ -262,9 +267,12 @@ function jobsList() {
 function viewLavori() {
   const unpaid = db.jobs.filter(isUnpaid);
   const f = [['tutti', 'Tutti'], ['programmati', 'Da fare'], ['completati', 'Fatti'], ['incassare', `Da incassare${unpaid.length ? ' (' + unpaid.length + ')' : ''}`], ['importanti', '★ Importanti']];
+  const sw = `<div class="seg big-seg"><button class="${S.lavMode !== 'preventivi' ? 'on' : ''}" data-a="lavMode" data-id="lavori">${ICON.calendar} Lavori</button>
+    <button class="${S.lavMode === 'preventivi' ? 'on' : ''}" data-a="lavMode" data-id="preventivi">${ICON.doc} Preventivi${db.quotes.length ? ' (' + db.quotes.length + ')' : ''}</button></div>`;
+  if (S.lavMode === 'preventivi') return { title: 'Lavori', html: sw + viewQuotes() };
   return {
     title: 'Lavori',
-    html: `<input id="q" class="search" type="search" placeholder="Cerca cliente, lavoro, indirizzo…" value="${esc(S.q)}">
+    html: sw + `<input id="q" class="search" type="search" placeholder="Cerca cliente, lavoro, indirizzo…" value="${esc(S.q)}">
       <div class="seg">${f.map(([k, l]) => `<button class="${S.filter === k ? 'on' : ''}" data-a="filter" data-id="${k}">${l}</button>`).join('')}</div>
       <div id="list">${jobsList()}</div>`
   };
@@ -287,6 +295,7 @@ function viewJob(j) {
         ${j.phone ? `<a class="btn" href="tel:${esc(j.phone.replace(/[^\d+]/g, ''))}">${ICON.phone} Chiama</a>` : ''}
         ${j.address ? `<button class="btn" data-a="mapChoice" data-id="${j.id}">${ICON.map} Mappa</button>` : ''}
         <button class="btn" data-a="editJob" data-id="${j.id}">${ICON.edit} Modifica</button>
+        ${j.quoteId && getQuote(j.quoteId) ? `<button class="btn" data-a="openQuote" data-id="${j.quoteId}">${ICON.doc} Preventivo ${esc(getQuote(j.quoteId).number)}</button>` : ''}
         ${j.status === 'programmato' ? `<button class="btn green" data-a="completeJob" data-id="${j.id}">${ICON.check} Completato</button>` : ''}
       </div></div>
 
@@ -434,6 +443,9 @@ function viewRiepilogo() {
     ${topClients.length ? `<div class="card"><h3>Clienti principali</h3>${topClients.map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><span>${eur(v)}</span></div>`).join('')}</div>` : ''}
     ${topMats.length ? `<div class="card"><h3>Materiali che costano di più</h3>${topMats.map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><span>${eur(v)}</span></div>`).join('')}</div>` : ''}
 
+    <div class="sec">Preventivi</div>
+    <div class="card"><div class="small muted">${biz().name ? 'Intestazione: <b style="color:var(--text)">' + esc(biz().name) + '</b>' : 'Inserisci il tuo nome, P.IVA e contatti: compariranno in alto in ogni preventivo.'}</div>
+      <button class="btn full" data-a="bizForm">I miei dati per i preventivi</button></div>
     <div class="sec">Backup e dati</div>
     <div class="card">
       <div class="small ${daysSince === null || daysSince > 14 ? 'out' : 'muted'}">${daysSince === null ? 'Non hai ancora fatto un backup.' : daysSince === 0 ? 'Ultimo backup: oggi.' : `Ultimo backup: ${daysSince} giorn${daysSince === 1 ? 'o' : 'i'} fa.`}
@@ -443,7 +455,7 @@ function viewRiepilogo() {
       <button class="btn full" data-a="exportCsv">Esporta movimenti per Excel (CSV)</button>
       <button class="btn danger full" data-a="wipe">Cancella tutti i dati</button>
     </div>
-    <p class="muted small" style="text-align:center">Agenda Idraulico · ${db.jobs.length} lavori · ${db.materials.length} materiali · ${db.moves.length} movimenti</p>`
+    <p class="muted small" style="text-align:center">Agenda Idraulico · ${db.jobs.length} lavori · ${db.materials.length} materiali · ${db.moves.length} movimenti · ${db.quotes.length} preventivi</p>`
   };
 }
 const VIEWS = { agenda: viewAgenda, lavori: viewLavori, soldi: viewSoldi, materiali: viewMateriali, riepilogo: viewRiepilogo };
@@ -452,17 +464,21 @@ function render() {
   openSwipe = null; drag = null;
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.id === S.tab));
   let v;
-  if (S.jobId) {
+  if (S.quoteId) {
+    const q = getQuote(S.quoteId);
+    if (!q) { S.quoteId = null; return render(); }
+    v = viewQuote(q);
+  } else if (S.jobId) {
     const j = getJob(S.jobId);
     if (!j) { S.jobId = null; return render(); }
     v = viewJob(j);
   } else v = VIEWS[S.tab]();
   $('#title').textContent = v.title;
-  $('#back').hidden = !S.jobId;
+  $('#back').hidden = !S.jobId && !S.quoteId;
   const warn = (saveFailed || !storageWorks())
     ? `<div class="hint" style="background:var(--red-soft)"><b style="color:var(--red)">I dati NON vengono salvati.</b> Probabilmente stai usando una finestra privata di Safari. Apri il link in una finestra normale di Safari, poi Condividi → "Aggiungi alla schermata Home" e usa sempre l'icona.</div>` : '';
   $('#main').innerHTML = warn + timerBanner() + v.html;
-  $('#fab').hidden = !!S.jobId || S.tab === 'riepilogo';
+  $('#fab').hidden = !!S.jobId || !!S.quoteId || S.tab === 'riepilogo';
 }
 
 /* ================= Moduli (fogli) ================= */
@@ -502,7 +518,7 @@ function openSheet(title, body, cfg) {
     <form class="sheet-body" autocomplete="off" onsubmit="return false">${body}
       <p class="muted small" style="text-align:center;margin:4px 0 0">Le modifiche si salvano da sole.</p>
       <button type="button" class="btn solid full" data-x>Fine</button>
-      <button type="button" class="btn danger full" data-del>Elimina</button></form></div>`;
+      ${cfg.noDelete ? '' : '<button type="button" class="btn danger full" data-del>Elimina</button>'}</form></div>`;
   document.body.appendChild(el);
   document.body.style.overflow = 'hidden';
   const form = el.querySelector('form');
@@ -524,7 +540,7 @@ function openSheet(title, body, cfg) {
   };
   el.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
   el.addEventListener('click', e => { if (e.target === el) close(); });
-  el.querySelector('[data-del]').onclick = async () => {
+  if (!cfg.noDelete) el.querySelector('[data-del]').onclick = async () => {
     if (!inserted) { el.remove(); document.body.style.overflow = ''; render(); return; }
     if (await askConfirm(cfg.delTitle || 'Sei sicuro di voler eliminare?', (typeof cfg.delMsg === 'function' ? cfg.delMsg() : cfg.delMsg) || 'Non si potrà più recuperare.')) {
       cfg.remove(); save();
@@ -541,11 +557,13 @@ const uniq = arr => [...new Set(arr.map(x => (x || '').trim()).filter(Boolean))]
 const datalist = (id, arr) => `<datalist id="${id}">${uniq(arr).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
 const opt = (v, cur, l = v) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`;
 
-function jobForm(j, presetDate) {
+function jobForm(j, presetDate, fromQuote) {
   const isNew = !j;
   j = j || { id: uid(), created: Date.now(), date: presetDate || today(), time: '', status: 'programmato', minutes: 0, amount: 0, paid: false };
   const mins = Math.round(j.minutes || 0);
-  const body = `
+  const avail = db.quotes.filter(q => { const x = quoteJob(q); return !x || x === j; }).sort((a, b) => (b.created || 0) - (a.created || 0));
+  const qSel = avail.length ? `<label>Da un preventivo <span class="muted">(facoltativo)</span><select name="quoteId">${opt('', j.quoteId || '', '— Nessuno —')}${avail.map(q => opt(q.id, j.quoteId || '', `N. ${q.number} · ${q.title || 'Preventivo'}${q.client ? ' · ' + q.client : ''} · ${eur(quoteTotals(q).tot)}`)).join('')}</select></label>` : '';
+  const body = `${qSel}
     <label>Lavoro da fare<input name="title" placeholder="Es. Perdita sotto lavello" value="${esc(j.title)}"></label>
     <label>Cliente<input name="client" list="dlC" placeholder="Nome e cognome" value="${esc(j.client)}"></label>${datalist('dlC', db.jobs.map(x => x.client))}
     <div class="row"><label>Telefono<input name="phone" type="tel" value="${esc(j.phone)}"></label></div>
@@ -566,15 +584,30 @@ function jobForm(j, presetDate) {
       title: d.title.trim(), client: d.client.trim(), phone: d.phone.trim(), address: d.address.trim(),
       date: d.date || j.date || today(), time: d.time, status: d.status,
       minutes: Math.max(0, num(d.h) * 60 + num(d.mi)),
-      amount: num(d.amount), paid: !!d.paid, paidDate: d.paid ? (d.paidDate || today()) : '', payMethod: d.payMethod, notes: d.notes.trim()
+      amount: num(d.amount), paid: !!d.paid, paidDate: d.paid ? (d.paidDate || today()) : '', payMethod: d.payMethod, notes: d.notes.trim(),
+      quoteId: d.quoteId !== undefined ? d.quoteId : (j.quoteId || '')
     }),
     empty: () => !(j.title || j.client || j.phone || j.address || j.notes || j.amount || j.minutes),
     add: () => db.jobs.push(j),
+    after: () => {
+      S.day = j.date; const dd = parseISO(j.date); S.cy = dd.getFullYear(); S.cm = dd.getMonth();
+      const q = j.quoteId && getQuote(j.quoteId); if (q && q.status !== 'accettato') { q.status = 'accettato'; save(); }
+    },
     remove: () => { db.materials = db.materials.filter(m => m.jobId !== j.id); db.jobs = db.jobs.filter(x => x !== j); if (S.jobId === j.id) S.jobId = null; },
-    after: () => { S.day = j.date; const dd = parseISO(j.date); S.cy = dd.getFullYear(); S.cm = dd.getMonth(); },
     delTitle: 'Eliminare questo lavoro?',
     delMsg: () => `"${j.title || 'Lavoro'}"${j.client ? ' di ' + j.client : ''} verrà eliminato insieme ai materiali collegati. Non si potrà più recuperare.`,
     init: f => {
+      // Scegliendo un preventivo, il lavoro si compila con i suoi dati
+      const fillFromQuote = () => {
+        const q = f.quoteId && getQuote(f.quoteId.value); if (!q) return;
+        f.title.value = q.title || f.title.value; f.client.value = q.client || f.client.value;
+        f.phone.value = q.phone || f.phone.value; f.address.value = q.address || f.address.value;
+        f.amount.value = numIn(quoteTotals(q).tot);
+        const voci = (q.lines || []).filter(l => l.desc).map(l => `- ${l.desc}${num(l.qty) !== 1 ? ' (' + numIn(num(l.qty)) + ' ' + (l.unit || '') + ')' : ''}`).join('\n');
+        f.notes.value = [`Da preventivo N. ${q.number}`, q.description, voci].filter(Boolean).join('\n\n');
+      };
+      if (f.quoteId) f.quoteId.addEventListener('change', fillFromQuote);
+      if (fromQuote && f.quoteId) setTimeout(() => { f.quoteId.value = fromQuote; fillFromQuote(); f.dispatchEvent(new Event('change')); }, 0);
       // Se scegli un cliente già noto, compila telefono e indirizzo
       f.client.addEventListener('change', () => {
         const prev = db.jobs.filter(x => x !== j && x.client && x.client.trim().toLowerCase() === f.client.value.trim().toLowerCase()).sort(byDateTime).pop();
@@ -673,11 +706,12 @@ function csvCell(v) { const s = String(v ?? ''); return /[;"\n]/.test(s) ? '"' +
 /* ================= Azioni ================= */
 const shiftMonth = (y, m, d) => { const t = new Date(y, m + d, 1); return [t.getFullYear(), t.getMonth()]; };
 const A = {
-  tab: id => { S.tab = id; S.jobId = null; render(); scrollTo(0, 0); },
-  back: () => { S.jobId = null; render(); },
-  openJob: id => { S.jobId = id; render(); scrollTo(0, 0); },
+  tab: id => { S.tab = id; S.jobId = null; S.quoteId = null; render(); scrollTo(0, 0); },
+  back: () => { if (S.quoteId) S.quoteId = null; else S.jobId = null; render(); },
+  openJob: id => { S.jobId = id; S.quoteId = null; render(); scrollTo(0, 0); },
   fab: () => {
-    if (S.tab === 'agenda' || S.tab === 'lavori') jobForm(null, S.tab === 'agenda' ? S.day : today());
+    if (S.tab === 'lavori' && S.lavMode === 'preventivi') quoteForm();
+    else if (S.tab === 'agenda' || S.tab === 'lavori') chooseCreate();
     else if (S.tab === 'soldi') moveForm();
     else if (S.tab === 'materiali') matForm();
   },
@@ -780,6 +814,22 @@ document.addEventListener('click', e => {
   const fn = A[t.dataset.a];
   if (fn) { e.preventDefault(); fn(t.dataset.id, t); }
 });
+/* ===== Tastiera: su iPhone le barre fisse a volte restano "a metà schermo" dopo aver scritto ===== */
+const isField = el => el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && !['checkbox', 'radio', 'file', 'button'].includes(el.type);
+let kbTimer = null;
+document.addEventListener('focusin', e => { if (isField(e.target)) { clearTimeout(kbTimer); document.body.classList.add('kb'); } });
+document.addEventListener('focusout', () => {
+  clearTimeout(kbTimer);
+  kbTimer = setTimeout(() => {
+    if (isField(document.activeElement)) return;
+    document.body.classList.remove('kb');
+    window.scrollTo(window.scrollX, window.scrollY); // fa ricalcolare la posizione delle barre
+  }, 120);
+});
+if (window.visualViewport) window.visualViewport.addEventListener('resize', () => {
+  const t = $('#tabs'); t.style.display = 'none'; void t.offsetHeight; t.style.display = '';
+});
+
 /* ===== Scorrimento delle righe dei lavori (come su iPhone) =====
    verso sinistra → Elimina, verso destra → Importante. Poi si tocca il pulsante comparso. */
 const SW = 92;
@@ -829,6 +879,7 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('input', e => {
   if (e.target.id === 'q') { S.q = e.target.value; $('#list').innerHTML = jobsList(); }
+  if (e.target.id === 'qq') { S.qq = e.target.value; $('#list').innerHTML = quotesList(); }
   if (e.target.id === 'mq') { S.mq = e.target.value; $('#list').innerHTML = matList(); }
   if ((e.target.id === 'tH' || e.target.id === 'tM') && S.jobId) {
     // Tempo scritto a mano: diventa il totale (se il cronometro gira, riparte da qui)

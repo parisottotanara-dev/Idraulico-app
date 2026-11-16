@@ -172,3 +172,18 @@ textarea{min-height:80px;resize:vertical}
 .swipe.open-l .sw-left,.swipe.open-r .sw-right{visibility:visible}
 .star{color:#e8a300}
 .swipe.imp .sw-front{box-shadow:inset 4px 0 0 #e8a300}
+/* Tastiera aperta: niente barre fisse */
+body.kb #tabs, body.kb #fab{display:none!important}
+/* Preventivi */
+.big-seg button{display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;font-size:15px}
+.big-seg svg{width:18px;height:18px}
+.qnum{font-size:13px;min-width:58px}
+.qline{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:0 0 10px}
+.qline-h{display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:14px}
+.qline-h b{flex:1}
+.qline-t{font-weight:700;font-variant-numeric:tabular-nums}
+.qdel{color:var(--red);font-size:14px!important}
+.qline label{font-size:12px}
+.logo-box{display:flex;align-items:center;gap:10px;margin:-6px 0 14px;flex-wrap:wrap}
+.logo-box img{max-height:56px;max-width:140px;border-radius:6px;background:#fff;border:1px solid var(--line)}
+.ask .btn svg{width:20px;height:20px}
