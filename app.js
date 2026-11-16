@@ -854,7 +854,28 @@ setInterval(() => {
   document.querySelectorAll('[data-timer]').forEach(el => { const j = getJob(el.dataset.timer); if (j) el.textContent = fmtMin(jobMinutes(j)); });
 }, 10000);
 // Se l'app torna in primo piano in un altro giorno, aggiorna
-document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.querySelector('.sheet-wrap')) render(); });
+/* Cambio di giorno: se l'app è rimasta aperta (anche in sottofondo) oltre la mezzanotte,
+   sposta su "oggi" il giorno evidenziato e i mesi mostrati che erano su quello corrente. */
+let lastToday = today();
+function checkNewDay() {
+  const t = today();
+  if (t === lastToday) return false;
+  const old = parseISO(lastToday), n = new Date();
+  if (S.day === lastToday) S.day = t;
+  if (S.cy === old.getFullYear() && S.cm === old.getMonth()) { S.cy = n.getFullYear(); S.cm = n.getMonth(); }
+  if (S.my === old.getFullYear() && S.mm === old.getMonth()) { S.my = n.getFullYear(); S.mm = n.getMonth(); }
+  if (S.py === old.getFullYear() && (S.period === 'anno' || S.pm === old.getMonth())) { S.py = n.getFullYear(); if (S.period !== 'anno') S.pm = n.getMonth(); }
+  lastToday = t;
+  return true;
+}
+function refreshIfNeeded(force) {
+  if (document.hidden || document.querySelector('.sheet-wrap, .ask-wrap')) return;
+  if (checkNewDay() || force) render();
+}
+document.addEventListener('visibilitychange', () => refreshIfNeeded(true));
+window.addEventListener('focus', () => refreshIfNeeded(false));
+window.addEventListener('pageshow', () => refreshIfNeeded(false));
+setInterval(() => refreshIfNeeded(false), 60000);
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 render();
