@@ -1,5 +1,5 @@
 // Funziona anche offline: prova la rete, se non c'è usa la copia salvata.
-const CACHE = 'idraulico-v14';
+const CACHE = 'idraulico-v15';
 const CAL = 'idraulico-cal'; // file calendario creati dall'app
 const FILES = ['./', './index.html', './style.css', './app.js', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png', './preventivi.js', './vendor/jspdf.umd.min.js', './promemoria.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });

@@ -26,6 +26,7 @@ function remLabel(m) {
   if (m % 60 === 0) return `${m / 60} ore prima`;
   return `${m} minuti prima`;
 }
+const remLc = m => { const l = remLabel(m); return l.charAt(0).toLowerCase() + l.slice(1); };
 const jobRems = j => Array.isArray(j.reminders) ? j.reminders : notifS().defaults;
 /** Data/ora dell'impegno (senza ora: si considera alle 8:00) */
 function jobStart(j) { const [y, m, d] = j.date.split('-').map(Number); const [h, mi] = (j.time || '08:00').split(':').map(Number); return new Date(y, m - 1, d, h, mi); }
@@ -73,7 +74,7 @@ function icsAlarm(trigger, text) { return ['BEGIN:VALARM', 'ACTION:DISPLAY', 'DE
 function jobVevent(j) {
   const summary = (j.title || 'Lavoro') + (j.client ? ' – ' + j.client : '');
   const desc = [j.client && 'Cliente: ' + j.client, j.phone && 'Tel. ' + j.phone, j.address && 'Indirizzo: ' + j.address, num(j.amount) ? 'Importo: ' + eur(j.amount) : '', j.notes].filter(Boolean).join('\n');
-  const L = ['BEGIN:VEVENT', `UID:${j.id}@agenda-idraulico`, 'DTSTAMP:' + icsUTC(), 'SUMMARY:' + icsEsc(summary)];
+  const L = ['BEGIN:VEVENT', `UID:${j.id}@agenda-idraulico`, 'DTSTAMP:' + icsUTC(), 'LAST-MODIFIED:' + icsUTC(), 'SEQUENCE:' + (j.calSeq || 0), 'SUMMARY:' + icsEsc(summary)];
   if (j.time) {
     const s = jobStart(j), e = new Date(s.getTime() + Math.max(60, Math.round(j.minutes || 0)) * 60000);
     L.push('DTSTART:' + icsDT(s), 'DTEND:' + icsDT(e));
@@ -111,8 +112,21 @@ const icsWrap = events => ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Agenda I
 
 /** Apre il file nel Calendario dell'iPhone ("Aggiungi"). Il file viene servito dall'app stessa,
     così Safari lo riconosce come calendario. Se non si apre, c'è la condivisione come riserva. */
-async function openIcs(ics, name) {
-  const fname = name.replace(/[^\w-]+/g, '-') + '.ics';
+/* Stato "nel Calendario" di ogni lavoro: se cambiano data, ora, titolo o promemoria va aggiunto di nuovo */
+const calSig = j => [j.date, j.time, j.title, j.client, j.address, jobRems(j).join(',')].join('|');
+const calState = j => !j.calSig ? 'none' : j.calSig === calSig(j) ? 'ok' : 'changed';
+/** Impegni futuri che hanno promemoria ma non sono (aggiornati) nel Calendario */
+const calPending = () => db.jobs.filter(j => j.status === 'programmato' && j.date >= today() && jobRems(j).length && calState(j) !== 'ok').sort(byDateTime);
+function calLabel(j) {
+  const st = calState(j);
+  return st === 'ok' ? '<span class="in">✓ Nel Calendario dell\'iPhone: gli avvisi arriveranno</span>'
+    : st === 'changed' ? '<span class="out">⚠ Modificato: aggiornalo nel Calendario</span>'
+    : '<span class="out">⚠ Non ancora nel Calendario: gli avvisi non arriveranno</span>';
+}
+/** Apre il file nel Calendario dell'iPhone ("Aggiungi"). Il file viene servito dall'app stessa,
+    così Safari lo riconosce come calendario. Poi chiede conferma: solo allora segna i lavori come aggiunti. */
+async function openIcs(ics, name, onDone) {
+  const fname = name.replace(/[^\w-]+/g, '-').slice(0, 40) + '.ics';
   let opened = false;
   try {
     if (navigator.serviceWorker && navigator.serviceWorker.controller && window.caches) {
@@ -125,12 +139,53 @@ async function openIcs(ics, name) {
   if (!opened) location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics);
   setTimeout(() => {
     const el = document.createElement('div'); el.className = 'ask-wrap';
-    el.innerHTML = `<div class="ask"><h2>Calendario</h2><p>Se è comparsa la schermata del Calendario, tocca <b>"Aggiungi"</b>. Gli avvisi arriveranno anche ad app chiusa.</p>
-      <button class="btn solid full" data-no>Fatto</button><button class="btn full" data-sh>Non si è aperto? Condividi il file</button></div>`;
+    el.innerHTML = `<div class="ask"><h2>Calendario</h2><p>Nella schermata del Calendario tocca <b>"Aggiungi"</b> (o "Aggiungi tutto"). Poi torna qui.</p>
+      <button class="btn solid full" data-ok>✓ Sì, l'ho aggiunto</button>
+      <button class="btn full" data-sh>Non si è aperto: salvo il file</button>
+      <button class="btn full" data-no style="background:var(--line);color:var(--text)">Annulla</button></div>`;
     document.body.appendChild(el);
+    el.querySelector('[data-ok]').onclick = () => { el.remove(); if (onDone) onDone(); save(); render(); toast('Fatto: gli avvisi arriveranno dal Calendario'); };
     el.querySelector('[data-no]').onclick = () => el.remove();
-    el.querySelector('[data-sh]').onclick = () => { el.remove(); shareBlob(new Blob([ics], { type: 'text/calendar' }), fname, 'text/calendar'); };
+    el.querySelector('[data-sh]').onclick = async () => {
+      el.remove();
+      await shareBlob(new Blob([ics], { type: 'text/calendar' }), fname, 'text/calendar');
+      const h = document.createElement('div'); h.className = 'ask-wrap';
+      h.innerHTML = `<div class="ask"><h2>Ultimo passaggio</h2><p>Scegli <b>"Salva su File"</b>, poi apri l'app <b>File</b> dell'iPhone, tocca il file <b>${esc(fname)}</b> e conferma <b>"Aggiungi"</b>.</p>
+        <button class="btn solid full" data-ok>✓ Fatto, l'ho aggiunto</button><button class="btn full" data-no>Più tardi</button></div>`;
+      document.body.appendChild(h);
+      h.querySelector('[data-ok]').onclick = () => { h.remove(); if (onDone) onDone(); save(); render(); };
+      h.querySelector('[data-no]').onclick = () => h.remove();
+    };
   }, 900);
+}
+/** Aggiunge (o aggiorna) uno o più lavori nel Calendario */
+function addJobsToCal(list) {
+  list.forEach(j => { if (j.calSig) j.calSeq = (j.calSeq || 0) + 1; });
+  const name = list.length === 1 ? (list[0].title || 'lavoro') : 'impegni-idraulico';
+  openIcs(icsWrap(list.flatMap(jobVevent)), name, () => list.forEach(j => { j.calSig = calSig(j); }));
+}
+/** Dopo aver creato o cambiato un lavoro: propone subito di metterlo nel Calendario */
+function offerCal(j) {
+  if (!j || j.status !== 'programmato' || j.date < today() || !jobRems(j).length || calState(j) === 'ok') return;
+  setTimeout(() => {
+    if (document.querySelector('.ask-wrap')) return;
+    const upd = calState(j) === 'changed';
+    const el = document.createElement('div'); el.className = 'ask-wrap';
+    el.innerHTML = `<div class="ask"><div class="ask-icon" style="background:var(--accent-soft);color:var(--accent)">🔔</div>
+      <h2>${upd ? 'Aggiornare il Calendario?' : 'Vuoi gli avvisi?'}</h2>
+      <p>${upd ? 'Hai cambiato questo impegno: aggiornalo nel Calendario dell\'iPhone per ricevere gli avvisi giusti.' : 'Aggiungi l\'impegno al Calendario dell\'iPhone: ti avviserà'} (${esc(jobRems(j).map(remLc).join(', '))}), anche ad app chiusa.</p>
+      <button class="btn solid full" data-ok>${ICON.calendar} ${upd ? 'Aggiorna nel Calendario' : 'Aggiungi al Calendario'}</button>
+      <button class="btn full" data-no>Più tardi</button></div>`;
+    document.body.appendChild(el);
+    el.querySelector('[data-ok]').onclick = () => { el.remove(); addJobsToCal([j]); };
+    el.querySelector('[data-no]').onclick = () => el.remove();
+  }, 350);
+}
+/** Riquadro in Agenda: impegni che non riceveranno avvisi */
+function calBanner() {
+  const p = calPending(); if (!p.length) return '';
+  return `<div class="hint" style="background:var(--accent-soft)"><b>🔔 ${p.length === 1 ? '1 impegno non è' : p.length + ' impegni non sono'} ancora nel Calendario</b> dell'iPhone, quindi non riceverai gli avvisi${p.length <= 3 ? ': ' + p.map(j => esc(j.title || 'Lavoro')).join(', ') : ''}.
+    <button class="btn solid full" data-a="calPendingAdd">${ICON.calendar} ${p.length === 1 ? 'Aggiungilo' : 'Aggiungili tutti'} al Calendario</button></div>`;
 }
 
 /* ---------- Promemoria dentro l'app (e notifica se l'app è aperta) ---------- */
@@ -155,8 +210,8 @@ function dueRecaps() {
   return out;
 }
 function remindersBanner() {
-  const r = dueReminders(), rc = dueRecaps();
-  if (!r.length && !rc.length) return '';
+  const r = dueReminders(), rc = dueRecaps(), cb = calBanner();
+  if (!r.length && !rc.length) return cb;
   const when = x => {
     const d = Math.round((x.start - Date.now()) / 60000); if (d <= 0) return 'adesso'; if (d < 60) return `tra ${d} min`;
     const tm = new Date(); tm.setDate(tm.getDate() + 1);
@@ -167,7 +222,7 @@ function remindersBanner() {
     <div class="remind-h">🔔 Promemoria</div>
     ${rc.map(x => `<div class="remind-it"><button class="link" data-a="openRecap" data-id="${x.kind}:${x.key}">${x.kind === 'week' ? 'Recap della prossima settimana' : 'Recap del prossimo mese'} →</button><button class="remind-x" data-a="seenRem" data-id="${x.key}" aria-label="Chiudi">✕</button></div>`).join('')}
     ${r.map(x => `<div class="remind-it"><button class="link" data-a="openJob" data-id="${x.j.id}"><b>${esc(x.j.title || 'Lavoro')}</b>${x.j.client ? ' · ' + esc(x.j.client) : ''} — ${when(x)}${x.j.time ? ' (ore ' + esc(x.j.time) + ')' : ''}</button><button class="remind-x" data-a="seenRem" data-id="${esc(x.key)}" aria-label="Chiudi">✕</button></div>`).join('')}
-  </div>`;
+  </div>${cb}`;
 }
 // Notifica di sistema mentre l'app è aperta (solo se l'utente l'ha permessa)
 async function pushDueNotifications() {
@@ -289,12 +344,9 @@ function notifForm() {
     <label class="check"><input type="checkbox" name="monthRecap" ${n.monthRecap ? 'checked' : ''}> Recap del prossimo mese (l'ultimo giorno del mese)</label><div style="height:8px"></div>
     <label>Ora<input type="time" name="monthTime" value="${esc(n.monthTime)}"></label>
     <div class="sec" style="margin:18px 0 8px">Avvisi anche ad app chiusa</div>
-    <p class="small" style="margin-top:0">L'iPhone avvisa sempre per gli impegni salvati nel suo <b>Calendario</b>. Con questi pulsanti li aggiungi tutti insieme, con i promemoria scelti:</p>
+    <p class="small" style="margin-top:0">Gli avvisi li manda il <b>Calendario dell'iPhone</b>: arrivano anche ad app chiusa, ma solo per gli impegni aggiunti al Calendario. Quando crei o cambi un lavoro l'app te lo propone subito.</p>
     <button type="button" class="btn solid full" id="calAll">${ICON.calendar} Aggiungi i prossimi impegni al Calendario</button>
-    <button type="button" class="btn full" id="calRecap">${ICON.calendar} Aggiungi gli avvisi dei recap al Calendario</button>
-    <div class="sec" style="margin:18px 0 8px">Notifiche dell'app</div>
-    <p class="small muted" style="margin-top:0">Mentre l'app è aperta o appena chiusa può mostrare una notifica. ${perm === 'granted' ? '<b class="in">Attive.</b>' : perm === 'denied' ? '<b class="out">Bloccate: si riattivano da Impostazioni dell\'iPhone → Notifiche → Idraulico.</b>' : perm === 'unsupported' ? 'Funzionano solo aprendo l\'app dall\'icona sulla schermata Home (iOS 16.4 o successivo).' : ''}</p>
-    ${perm === 'default' ? '<button type="button" class="btn full" id="askPerm">Attiva le notifiche</button>' : ''}`;
+    <button type="button" class="btn full" id="calRecap">${ICON.calendar} Aggiungi gli avvisi dei recap al Calendario</button>`;
   return openSheet('Promemoria e recap', body, {
     isNew: false, noDelete: true, empty: () => false, add: () => {}, remove: () => {},
     apply: d => Object.assign(n, {
@@ -303,17 +355,13 @@ function notifForm() {
     }),
     init: f => {
       f.querySelector('#calAll').onclick = () => {
-        const list = db.jobs.filter(j => j.status === 'programmato' && j.date >= today()).sort(byDateTime);
-        if (!list.length) { toast('Nessun impegno in programma'); return; }
-        openIcs(icsWrap(list.flatMap(jobVevent)), 'impegni-idraulico');
+        const list = calPending();
+        if (!list.length) { toast('Tutti gli impegni sono già nel Calendario'); return; }
+        addJobsToCal(list);
       };
       f.querySelector('#calRecap').onclick = () => {
         const ev = recapVevents(); if (!ev.length) { toast('Attiva almeno un recap'); return; }
-        openIcs(icsWrap(ev), 'recap-idraulico');
-      };
-      const ask = f.querySelector('#askPerm');
-      if (ask) ask.onclick = async () => {
-        try { const r = await Notification.requestPermission(); toast(r === 'granted' ? 'Notifiche attivate' : 'Notifiche non attivate'); if (r === 'granted') pushDueNotifications(); ask.remove(); } catch (e) {}
+        openIcs(icsWrap(ev), 'recap-idraulico', () => { notifS().recapCal = 1; });
       };
     }
   });
@@ -331,7 +379,8 @@ Object.assign(A, {
     if (navigator.share) { try { await navigator.share({ text: t }); return; } catch (e) { if (e.name === 'AbortError') return; } }
     try { await navigator.clipboard.writeText(t); toast('Recap copiato'); } catch (e) { alert(t); }
   },
-  addToCal: id => { const j = getJob(id); if (j) openIcs(icsWrap(jobVevent(j)), (j.title || 'lavoro')); },
+  addToCal: id => { const j = getJob(id); if (j) addJobsToCal([j]); },
+  calPendingAdd: () => { const p = calPending(); if (p.length) addJobsToCal(p); },
   notifForm: () => notifForm(),
   statM: k => { S.statM = k; render(); },
   statN: v => { S.statN = +v; S.statSel = null; render(); },

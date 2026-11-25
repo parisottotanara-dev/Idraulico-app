@@ -305,11 +305,12 @@ function viewJob(j) {
         ${j.phone ? `<a class="btn" href="tel:${esc(j.phone.replace(/[^\d+]/g, ''))}">${ICON.phone} Chiama</a>` : ''}
         ${j.address ? `<button class="btn" data-a="mapChoice" data-id="${j.id}">${ICON.map} Mappa</button>` : ''}
         <button class="btn" data-a="editJob" data-id="${j.id}">${ICON.edit} Modifica</button>
-        ${j.status === 'programmato' ? `<button class="btn" data-a="addToCal" data-id="${j.id}">${ICON.calendar} Aggiungi al Calendario</button>` : ''}
+        ${j.status === 'programmato' && j.date >= today() && calState(j) !== 'ok' ? `<button class="btn" data-a="addToCal" data-id="${j.id}">${ICON.calendar} ${calState(j) === 'changed' ? 'Aggiorna nel Calendario' : 'Aggiungi al Calendario'}</button>` : ''}
         ${j.quoteId && getQuote(j.quoteId) ? `<button class="btn" data-a="openQuote" data-id="${j.quoteId}">${ICON.doc} Preventivo ${esc(getQuote(j.quoteId).number)}</button>` : ''}
         ${j.status === 'programmato' ? `<button class="btn green" data-a="completeJob" data-id="${j.id}">${ICON.check} Completato</button>` : ''}
       </div>
-      ${j.status === 'programmato' ? `<div class="muted small" style="margin-top:10px">🔔 ${jobRems(j).length ? jobRems(j).map(remLabel).join(', ') : 'Nessun promemoria'}</div>` : ''}</div>
+      ${j.status === 'programmato' ? `<div class="muted small" style="margin-top:10px">🔔 ${jobRems(j).length ? jobRems(j).map(remLc).join(', ') : 'Nessun promemoria'}</div>
+        ${jobRems(j).length && j.date >= today() ? `<div class="small" style="margin-top:4px;font-weight:600">${calLabel(j)}</div>` : ''}` : ''}</div>
 
     <div class="card"><h3>Tempo impiegato</h3>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -663,6 +664,7 @@ function jobForm(j, presetDate, fromQuote) {
       S.day = j.date; const dd = parseISO(j.date); S.cy = dd.getFullYear(); S.cm = dd.getMonth();
       const q = j.quoteId && getQuote(j.quoteId); if (q && q.status !== 'accettato') { q.status = 'accettato'; save(); }
       const n = addQuoteMaterials(j); if (n) { save(); toast(`Aggiunt${n === 1 ? 'o 1 materiale' : 'i ' + n + ' materiali'} dal preventivo (spese)`); }
+      if (typeof offerCal === 'function') offerCal(j);
     },
     remove: () => { db.materials = db.materials.filter(m => m.jobId !== j.id); db.jobs = db.jobs.filter(x => x !== j); if (S.jobId === j.id) S.jobId = null; },
     delTitle: 'Eliminare questo lavoro?',
