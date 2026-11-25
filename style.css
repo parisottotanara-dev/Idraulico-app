@@ -201,3 +201,27 @@ body.kb #tabs, body.kb #fab{display:none!important}
 .mine-card{border:1.5px dashed var(--amber)}
 .mine-card h3{color:var(--amber)}
 .mine-t{color:var(--amber)}
+/* Promemoria */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chipbox{margin:0}
+.chipbox input{display:none}
+.chipbox span{display:inline-block;padding:8px 12px;border-radius:99px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:14px;font-weight:600}
+.chipbox input:checked+span{background:var(--accent);border-color:var(--accent);color:#fff}
+.remind{background:var(--amber-soft);border-radius:var(--radius);padding:10px 14px;margin:0 0 14px}
+.remind-h{font-weight:700;color:var(--amber);margin-bottom:4px}
+.remind-it{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid color-mix(in srgb,var(--amber) 25%,transparent)}
+.remind-it .link{flex:1;text-align:left;font-size:15px;color:var(--text)}
+.remind-x{width:32px;height:32px;border-radius:50%;color:var(--muted);flex:none}
+/* Grafico confronto mesi */
+.chart{width:100%;height:auto;display:block;margin:4px 0 6px;overflow:visible}
+.chart .pos{fill:var(--accent);opacity:.55}
+.chart .neg{fill:var(--red);opacity:.55}
+.chart .bar.sel .pos,.chart .bar.sel .neg{opacity:1}
+.chart .zero{stroke:var(--muted);stroke-width:1;opacity:.6}
+.chart .ax{font-size:10px;fill:var(--muted);font-family:inherit}
+.chart .bar.sel .ax{fill:var(--text);font-weight:700}
+.chart-v{font-size:15px;margin:2px 0 0}
+.chart-v b{font-weight:600}
+.chart rect,.chart path,.chart text{stroke:none}
+.chart .zero{stroke:var(--muted)}
+.chart .bar{cursor:pointer}

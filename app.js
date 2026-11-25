@@ -244,7 +244,7 @@ function viewAgenda() {
     <button class="btn solid full" data-a="exportJson">Salva backup adesso</button></div>` : '';
   return {
     title: 'Agenda',
-    html: `${installHint}${restoreHint}${backupHint}
+    html: `${typeof remindersBanner === 'function' ? remindersBanner() : ''}${installHint}${restoreHint}${backupHint}
     <div class="card">${monthNav(`${MONTHS[m]} ${y}`, 'calPrev', 'calNext', 'calToday')}<div class="cal">${cells}</div></div>
     <div class="sec">${esc(fmtDateLong(S.day))}</div>
     <div class="list">${dayJobs.map(j => jobItem(j, false)).join('') || `<div class="empty">Nessun impegno.<br><button class="btn full" data-a="newJob">+ Aggiungi impegno</button></div>`}</div>
@@ -305,9 +305,11 @@ function viewJob(j) {
         ${j.phone ? `<a class="btn" href="tel:${esc(j.phone.replace(/[^\d+]/g, ''))}">${ICON.phone} Chiama</a>` : ''}
         ${j.address ? `<button class="btn" data-a="mapChoice" data-id="${j.id}">${ICON.map} Mappa</button>` : ''}
         <button class="btn" data-a="editJob" data-id="${j.id}">${ICON.edit} Modifica</button>
+        ${j.status === 'programmato' ? `<button class="btn" data-a="addToCal" data-id="${j.id}">${ICON.calendar} Aggiungi al Calendario</button>` : ''}
         ${j.quoteId && getQuote(j.quoteId) ? `<button class="btn" data-a="openQuote" data-id="${j.quoteId}">${ICON.doc} Preventivo ${esc(getQuote(j.quoteId).number)}</button>` : ''}
         ${j.status === 'programmato' ? `<button class="btn green" data-a="completeJob" data-id="${j.id}">${ICON.check} Completato</button>` : ''}
-      </div></div>
+      </div>
+      ${j.status === 'programmato' ? `<div class="muted small" style="margin-top:10px">🔔 ${jobRems(j).length ? jobRems(j).map(remLabel).join(', ') : 'Nessun promemoria'}</div>` : ''}</div>
 
     <div class="card"><h3>Tempo impiegato</h3>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -410,7 +412,9 @@ function periodRange() {
   if (S.period === 'anno') return [`${S.py}-01-01`, `${S.py}-12-31`, `Anno ${S.py}`];
   return ['0000-00-00', '9999-12-31', 'Da sempre'];
 }
+const PERIODS = [['mese', 'Mese'], ['anno', 'Anno'], ['tutto', 'Tutto'], ['confronto', 'Confronto']];
 function viewRiepilogo() {
+  if (S.period === 'confronto') return { title: 'Riepilogo', html: `<div class="seg">${PERIODS.map(([k, l]) => `<button class="${S.period === k ? 'on' : ''}" data-a="period" data-id="${k}">${l}</button>`).join('')}</div>${viewCompare()}` };
   const [from, to, label] = periodRange();
   const s = stats(from, to);
   // Classifiche
@@ -432,7 +436,7 @@ function viewRiepilogo() {
   const nav = S.period === 'tutto' ? `<div class="mnav"><strong>${label}</strong></div>` : monthNav(label, 'pPrev', 'pNext', 'pToday');
   return {
     title: 'Riepilogo',
-    html: `<div class="seg">${[['mese', 'Mese'], ['anno', 'Anno'], ['tutto', 'Tutto']].map(([k, l]) => `<button class="${S.period === k ? 'on' : ''}" data-a="period" data-id="${k}">${l}</button>`).join('')}</div>
+    html: `<div class="seg">${PERIODS.map(([k, l]) => `<button class="${S.period === k ? 'on' : ''}" data-a="period" data-id="${k}">${l}</button>`).join('')}</div>
     ${nav}
     <div class="grid2">
       <div class="stat wide"><div class="l">Utile (entrate − uscite)</div><div class="v ${s.net >= 0 ? 'in' : 'out'}" style="font-size:30px">${eur(s.net)}</div></div>
@@ -453,6 +457,12 @@ function viewRiepilogo() {
     ${topClients.length ? `<div class="card"><h3>Clienti principali</h3>${topClients.map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><span>${eur(v)}</span></div>`).join('')}</div>` : ''}
     ${topMats.length ? `<div class="card"><h3>Materiali che costano di più</h3>${topMats.map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><span>${eur(v)}</span></div>`).join('')}</div>` : ''}
 
+    <div class="sec">Recap e promemoria</div>
+    <div class="card">
+      <div class="quick" style="grid-template-columns:1fr 1fr;margin:0">
+        <button class="btn" data-a="openRecap" data-id="week">Prossima settimana</button>
+        <button class="btn" data-a="openRecap" data-id="month">Prossimo mese</button></div>
+      <button class="btn full" data-a="notifForm">🔔 Promemoria e recap: impostazioni</button></div>
     <div class="sec">Preventivi</div>
     <div class="card"><div class="small muted">${biz().name ? 'Intestazione: <b style="color:var(--text)">' + esc(biz().name) + '</b>' : 'Inserisci il tuo nome, P.IVA e contatti: compariranno in alto in ogni preventivo.'}</div>
       <button class="btn full" data-a="bizForm">I miei dati per i preventivi</button></div>
@@ -474,7 +484,9 @@ function render() {
   openSwipe = null; drag = null;
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.id === S.tab));
   let v;
-  if (S.quoteId) {
+  if (S.recap) {
+    v = viewRecap(S.recap);
+  } else if (S.quoteId) {
     const q = getQuote(S.quoteId);
     if (!q) { S.quoteId = null; return render(); }
     v = viewQuote(q);
@@ -484,11 +496,11 @@ function render() {
     v = viewJob(j);
   } else v = VIEWS[S.tab]();
   $('#title').textContent = v.title;
-  $('#back').hidden = !S.jobId && !S.quoteId;
+  $('#back').hidden = !S.jobId && !S.quoteId && !S.recap;
   const warn = (saveFailed || !storageWorks())
     ? `<div class="hint" style="background:var(--red-soft)"><b style="color:var(--red)">I dati NON vengono salvati.</b> Probabilmente stai usando una finestra privata di Safari. Apri il link in una finestra normale di Safari, poi Condividi → "Aggiungi alla schermata Home" e usa sempre l'icona.</div>` : '';
   $('#main').innerHTML = warn + timerBanner() + v.html;
-  $('#fab').hidden = !!S.jobId || !!S.quoteId || S.tab === 'riepilogo';
+  $('#fab').hidden = !!S.jobId || !!S.quoteId || !!S.recap || S.tab === 'riepilogo';
 }
 
 /* ================= Rubrica clienti =================
@@ -633,7 +645,8 @@ function jobForm(j, presetDate, fromQuote) {
     <label class="check"><input type="checkbox" name="paid" ${j.paid ? 'checked' : ''}> Già pagato</label><div style="height:12px"></div>
     <div class="row"><label>Data pagamento<input type="date" name="paidDate" value="${esc(j.paidDate || '')}"></label>
       <label>Pagamento<select name="payMethod">${opt('', j.payMethod || '', '—')}${['Contanti', 'Bonifico', 'POS / Carta', 'Assegno', 'Altro'].map(x => opt(x, j.payMethod)).join('')}</select></label></div>
-    <label>Note<textarea name="notes" placeholder="Dettagli, codici, misure…">${esc(j.notes)}</textarea></label>`;
+    <label>Note<textarea name="notes" placeholder="Dettagli, codici, misure…">${esc(j.notes)}</textarea></label>
+    ${remField(j)}`;
   return openSheet(isNew ? 'Nuovo lavoro' : 'Modifica lavoro', body, {
     isNew,
     apply: d => Object.assign(j, {
@@ -641,7 +654,8 @@ function jobForm(j, presetDate, fromQuote) {
       date: d.date || j.date || today(), time: d.time, status: d.status,
       minutes: Math.max(0, num(d.h) * 60 + num(d.mi)),
       amount: num(d.amount), paid: !!d.paid, paidDate: d.paid ? (d.paidDate || today()) : '', payMethod: d.payMethod, notes: d.notes.trim(),
-      quoteId: d.quoteId !== undefined ? d.quoteId : (j.quoteId || '')
+      quoteId: d.quoteId !== undefined ? d.quoteId : (j.quoteId || ''),
+      reminders: readRems(d)
     }),
     empty: () => !(j.title || j.client || j.phone || j.address || j.notes || j.amount || j.minutes),
     add: () => db.jobs.push(j),
@@ -666,6 +680,7 @@ function jobForm(j, presetDate, fromQuote) {
       if (f.quoteId) f.quoteId.addEventListener('change', fillFromQuote);
       if (fromQuote && f.quoteId) setTimeout(() => { f.quoteId.value = fromQuote; fillFromQuote(); f.dispatchEvent(new Event('change')); }, 0);
       clientPicker(f, j);
+      initRemField(f, j);
       // Se scegli un cliente già noto, compila telefono e indirizzo
       f.client.addEventListener('change', () => {
         const prev = db.jobs.filter(x => x !== j && x.client && x.client.trim().toLowerCase() === f.client.value.trim().toLowerCase()).sort(byDateTime).pop();
@@ -764,8 +779,8 @@ function csvCell(v) { const s = String(v ?? ''); return /[;"\n]/.test(s) ? '"' +
 /* ================= Azioni ================= */
 const shiftMonth = (y, m, d) => { const t = new Date(y, m + d, 1); return [t.getFullYear(), t.getMonth()]; };
 const A = {
-  tab: id => { S.tab = id; S.jobId = null; S.quoteId = null; render(); scrollTo(0, 0); },
-  back: () => { if (S.quoteId) S.quoteId = null; else S.jobId = null; render(); },
+  tab: id => { S.tab = id; S.jobId = null; S.quoteId = null; S.recap = null; render(); scrollTo(0, 0); },
+  back: () => { if (S.quoteId) S.quoteId = null; else if (S.jobId) S.jobId = null; else S.recap = null; render(); },
   openJob: id => { S.jobId = id; S.quoteId = null; render(); scrollTo(0, 0); },
   fab: () => {
     if (S.tab === 'lavori' && S.lavMode === 'preventivi') quoteForm();
