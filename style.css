@@ -225,3 +225,14 @@ body.kb #tabs, body.kb #fab{display:none!important}
 .chart rect,.chart path,.chart text{stroke:none}
 .chart .zero{stroke:var(--muted)}
 .chart .bar{cursor:pointer}
+/* Da comprare */
+.quickadd{display:flex;gap:8px;margin:0 0 12px}
+.quickadd input{margin:0;flex:1}
+.quickadd .btn{flex:none}
+.item.todo{gap:10px;padding:10px 12px}
+.item.todo .main{background:none;border:0;padding:0;color:inherit;font:inherit}
+.tick{width:28px;height:28px;flex:none;border-radius:50%;border:2px solid var(--muted);display:grid;place-items:center;color:#fff}
+.tick svg{width:18px;height:18px;stroke-width:3}
+.item.todo.done .tick{background:var(--green);border-color:var(--green)}
+.item.todo.done .t{text-decoration:line-through;color:var(--muted)}
+.small-btn{padding:7px 10px;font-size:13px;flex:none}

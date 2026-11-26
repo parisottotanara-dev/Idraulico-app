@@ -45,6 +45,7 @@ function normalize(d) {
     version: 1, savedAt: d.savedAt || 0,
     jobs: Array.isArray(d.jobs) ? d.jobs : [],
     quotes: Array.isArray(d.quotes) ? d.quotes : [],
+    todo: Array.isArray(d.todo) ? d.todo : [],
     materials: Array.isArray(d.materials) ? d.materials : [],
     moves: Array.isArray(d.moves) ? d.moves : [],
     settings: Object.assign({ lastBackup: null, hideInstall: false }, d.settings || {})
@@ -327,6 +328,7 @@ function viewJob(j) {
         <button class="btn" data-a="addTime" data-id="60">+1 h</button>
         <button class="btn danger" data-a="resetTime">Azzera</button></div></div>
 
+    ${typeof jobTodoSection === 'function' && j.status !== 'annullato' ? jobTodoSection(j) : ''}
     <div class="sec">Materiali usati</div>
     <div class="list">${mats.map(m => matItem(m, false)).join('') || '<div class="empty">Nessun materiale.</div>'}
       <button class="item" data-a="newMat" data-id="${j.id}" style="color:var(--accent);font-weight:600;justify-content:center">+ Aggiungi materiale</button></div>
@@ -403,8 +405,9 @@ function viewMateriali() {
     title: 'Materiali',
     html: `<input id="mq" class="search" type="search" placeholder="Cerca articolo, marca, fornitore…" value="${esc(S.mq)}">
     <div class="seg"><button class="${S.matMode === 'list' ? 'on' : ''}" data-a="matMode" data-id="list">Cronologia</button>
-      <button class="${S.matMode === 'group' ? 'on' : ''}" data-a="matMode" data-id="group">Per articolo e prezzi</button></div>
-    <div id="list">${matList()}</div>`
+      <button class="${S.matMode === 'group' ? 'on' : ''}" data-a="matMode" data-id="group">Per articolo</button>
+      <button class="${S.matMode === 'todo' ? 'on' : ''}" data-a="matMode" data-id="todo">📝 Da comprare${db.todo.filter(t => !t.done).length ? ' (' + db.todo.filter(t => !t.done).length + ')' : ''}</button></div>
+    <div id="list">${S.matMode === 'todo' ? todoList() : matList()}</div>`
   };
 }
 
@@ -788,7 +791,7 @@ const A = {
     if (S.tab === 'lavori' && S.lavMode === 'preventivi') quoteForm();
     else if (S.tab === 'agenda' || S.tab === 'lavori') chooseCreate();
     else if (S.tab === 'soldi') moveForm();
-    else if (S.tab === 'materiali') matForm();
+    else if (S.tab === 'materiali') S.matMode === 'todo' ? todoForm() : matForm();
   },
   newJob: () => jobForm(null, S.day),
   editJob: id => jobForm(getJob(id)),
@@ -955,7 +958,7 @@ document.addEventListener('change', e => {
 document.addEventListener('input', e => {
   if (e.target.id === 'q') { S.q = e.target.value; $('#list').innerHTML = jobsList(); }
   if (e.target.id === 'qq') { S.qq = e.target.value; $('#list').innerHTML = quotesList(); }
-  if (e.target.id === 'mq') { S.mq = e.target.value; $('#list').innerHTML = matList(); }
+  if (e.target.id === 'mq') { S.mq = e.target.value; $('#list').innerHTML = S.matMode === 'todo' ? todoList() : matList(); }
   if ((e.target.id === 'tH' || e.target.id === 'tM') && S.jobId) {
     // Tempo scritto a mano: diventa il totale (se il cronometro gira, riparte da qui)
     const j = getJob(S.jobId); if (!j) return;
