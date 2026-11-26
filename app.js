@@ -183,10 +183,11 @@ function flowItem(f) {
 }
 function matItem(m, showJob = true) {
   const j = m.jobId && getJob(m.jobId);
-  return `<button class="item" data-a="editMat" data-id="${m.id}">
+  return `<div class="swipe"><button class="sw-act sw-right" data-a="delMat" data-id="${m.id}" tabindex="-1">${ICON.trash}<span>Elimina</span></button>
+    <button class="item sw-front" data-a="editMat" data-id="${m.id}">
     <div class="main"><div class="t">${esc(m.name)}${m.brand ? ` <span class="muted">· ${esc(m.brand)}</span>` : ''}</div>
       <div class="s">${esc(fmtDate(m.date))} · ${numIn(num(m.qty)) || 0} ${esc(m.unit || 'pz')} × ${eur(m.unitCost)}${showJob && j ? ' · ' + esc(j.title) : ''}</div></div>
-    <div class="r num">${eur(matTotal(m))}</div></button>`;
+    <div class="r num">${eur(matTotal(m))}</div></button></div>`;
 }
 function timerBanner() {
   return db.jobs.filter(j => j.timerStart && j.id !== S.jobId).map(j =>
@@ -857,6 +858,14 @@ const A = {
     j.important = !j.important; save(); render();
     toast(j.important ? '★ Segnato come importante' : 'Tolto da importanti');
   },
+  delMat: async id => {
+    const m = getMat(id); if (!m) return;
+    closeSwipe();
+    if (!(await askConfirm('Eliminare questo materiale?', `"${m.name || 'Materiale'}"${m.brand ? ' (' + m.brand + ')' : ''} · ${eur(matTotal(m))}. La spesa verrà tolta anche da Soldi e Riepilogo.`))) return;
+    db.materials = db.materials.filter(x => x !== m);
+    (db.todo || []).forEach(t => { if (t.matId === id) t.matId = ''; });
+    save(); render(); toast('Materiale eliminato');
+  },
   delJob: async id => {
     const j = getJob(id); if (!j) return;
     closeSwipe();
@@ -930,6 +939,9 @@ document.addEventListener('pointermove', e => {
     drag.active = true;
   }
   let x = drag.start + dx;
+  const rowEl = drag.front.parentElement;
+  if (!rowEl.querySelector('.sw-left')) x = Math.min(0, x);   // niente azione a sinistra (es. materiali)
+  if (!rowEl.querySelector('.sw-right')) x = Math.max(0, x);
   if (Math.abs(x) > SW) x = Math.sign(x) * (SW + (Math.abs(x) - SW) * 0.3); // un po' di resistenza
   drag.dx = x;
   const row = drag.front.parentElement;

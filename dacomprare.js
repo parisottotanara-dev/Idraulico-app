@@ -11,7 +11,8 @@ const todoOpen = () => db.todo.filter(t => !t.done);
 function todoItem(t, showJob = true) {
   const j = t.jobId && getJob(t.jobId);
   const det = [t.qty && `${numIn(num(t.qty))} ${t.unit || 'pz'}`, t.brand, t.notes].filter(Boolean).map(esc).join(' · ');
-  return `<div class="item todo ${t.done ? 'done' : ''}">
+  return `<div class="swipe"><button class="sw-act sw-right" data-a="delTodo" data-id="${t.id}" tabindex="-1">${ICON.trash}<span>Elimina</span></button>
+    <div class="item todo sw-front ${t.done ? 'done' : ''}">
     <button class="tick" data-a="todoTick" data-id="${t.id}" aria-label="${t.done ? 'Segna come da prendere' : 'Segna come preso'}">${t.done ? ICON.check : ''}</button>
     <button class="main" data-a="todoEdit" data-id="${t.id}" style="text-align:left">
       <div class="t">${esc(t.text)}</div>
@@ -19,7 +20,7 @@ function todoItem(t, showJob = true) {
     </button>
     ${t.done && !t.matId ? `<button class="btn small-btn" data-a="todoBuy" data-id="${t.id}">Registra spesa</button>` : ''}
     ${t.matId ? '<span class="chip green">Spesa registrata</span>' : ''}
-  </div>`;
+  </div></div>`;
 }
 function quickAdd(jobId) {
   return `<div class="quickadd"><input id="tdq" ${jobId ? `data-job="${jobId}"` : ''} placeholder="Cosa ti serve?" enterkeyhint="done" autocomplete="off">
@@ -91,6 +92,12 @@ Object.assign(A, {
     if (t.done && !t.matId) toast('Preso! Tocca "Registra spesa" per segnare quanto l\'hai pagato');
   },
   todoEdit: id => todoForm(getTodo(id)),
+  delTodo: async id => {
+    const t = getTodo(id); if (!t) return;
+    closeSwipe();
+    if (!(await askConfirm('Eliminare questa nota?', `"${t.text || 'Nota'}" verrà tolta dall'elenco Da comprare.`))) return;
+    db.todo = db.todo.filter(x => x !== t); save(); render(); toast('Nota eliminata');
+  },
   todoBuy: id => {
     const t = getTodo(id); if (!t) return;
     const before = new Set(db.materials.map(m => m.id));
