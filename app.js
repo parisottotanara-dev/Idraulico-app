@@ -1,7 +1,7 @@
 'use strict';
 /* ================= Utility ================= */
 // Versione dell'app: deve essere uguale al contenuto di version.txt (va aumentata a ogni aggiornamento)
-const APP_VERSION = '19';
+const APP_VERSION = '20';
 const KEY = 'idraulico.data.v1';
 const $ = (s, r = document) => r.querySelector(s);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);

@@ -1,5 +1,5 @@
 // Funziona anche offline: prova la rete, se non c'è usa la copia salvata.
-const CACHE = 'idraulico-v19';
+const CACHE = 'idraulico-v20';
 const CAL = 'idraulico-cal'; // file calendario creati dall'app
 const FILES = ['./', './index.html', './style.css', './app.js', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png', './preventivi.js', './vendor/jspdf.umd.min.js', './promemoria.js', './dacomprare.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
@@ -15,7 +15,8 @@ self.addEventListener('fetch', e => {
     return;
   }
   e.respondWith(
-    fetch(e.request).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r; })
+    // 'no-cache': chiede sempre al server se il file è cambiato (niente versioni vecchie in memoria)
+    (e.request.mode === 'navigate' ? fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' }) : fetch(e.request, { cache: 'no-cache' })).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r; })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('./index.html')))
   );
 });
