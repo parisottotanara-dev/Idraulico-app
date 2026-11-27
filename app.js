@@ -1,7 +1,7 @@
 'use strict';
 /* ================= Utility ================= */
 // Versione dell'app: deve essere uguale al contenuto di version.txt (va aumentata a ogni aggiornamento)
-const APP_VERSION = '21';
+const APP_VERSION = '22';
 const KEY = 'idraulico.data.v1';
 const $ = (s, r = document) => r.querySelector(s);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -239,8 +239,6 @@ function viewAgenda() {
     ? `<div class="hint"><b>Installa l'app:</b> in Safari tocca <b>Condividi</b> (il quadrato con la freccia) e poi <b>"Aggiungi alla schermata Home"</b>. <button class="link small" data-a="hideInstall" style="font-size:14px">Ok, nascondi</button></div>` : '';
   // App vuota (appena installata o reinstallata): proposta di ripristino del backup
   const isEmpty = !db.jobs.length && !db.materials.length && !db.moves.length && !db.quotes.length;
-  const restoreHint = isEmpty ? `<div class="hint"><b>Hai già usato l'app su questo telefono?</b> Se l'avevi cancellata e rimessa, i dati si recuperano dal file di backup.
-    <button class="btn solid full" data-a="importJson">Ripristina i miei dati da un backup</button></div>` : '';
   // Promemoria backup: se è passata più di una settimana
   const lbk = db.settings.lastBackup, bkDays = lbk ? Math.floor((Date.now() - lbk) / 864e5) : null;
   const backupHint = !isEmpty && (bkDays === null || bkDays >= 7) ? `<div class="hint" style="background:var(--amber-soft)">
@@ -249,7 +247,7 @@ function viewAgenda() {
     <button class="btn solid full" data-a="exportJson">Salva backup adesso</button></div>` : '';
   return {
     title: 'Agenda',
-    html: `${typeof remindersBanner === 'function' ? remindersBanner() : ''}${installHint}${restoreHint}${backupHint}
+    html: `${typeof remindersBanner === 'function' ? remindersBanner() : ''}${installHint}${backupHint}
     <div class="card">${monthNav(`${MONTHS[m]} ${y}`, 'calPrev', 'calNext', 'calToday')}<div class="cal">${cells}</div></div>
     <div class="sec">${esc(fmtDateLong(S.day))}</div>
     <div class="list">${dayJobs.map(j => jobItem(j, false)).join('') || `<div class="empty">Nessun impegno.<br><button class="btn full" data-a="newJob">+ Aggiungi impegno</button></div>`}</div>
@@ -483,7 +481,9 @@ function viewRiepilogo() {
       <button class="btn full" data-a="exportCsv">Esporta movimenti per Excel (CSV)</button>
       <button class="btn danger full" data-a="wipe">Cancella tutti i dati</button>
     </div>
-    <p class="muted small" style="text-align:center">Agenda Idraulico · ${db.jobs.length} lavori · ${db.materials.length} materiali · ${db.moves.length} movimenti · ${db.quotes.length} preventivi<br>Versione ${APP_VERSION}</p>`
+    <p class="muted small" style="text-align:center">Agenda Idraulico · ${db.jobs.length} lavori · ${db.materials.length} materiali · ${db.moves.length} movimenti · ${db.quotes.length} preventivi<br>Versione ${APP_VERSION}</p>
+    ${!db.jobs.length && !db.materials.length && !db.moves.length && !db.quotes.length ? `<div class="hint"><b>Hai già usato l'app su questo telefono?</b> Se l'avevi cancellata e rimessa, i dati si recuperano dal file di backup.
+      <button class="btn solid full" data-a="importJson">Ripristina i miei dati da un backup</button></div>` : ''}`
   };
 }
 const VIEWS = { agenda: viewAgenda, lavori: viewLavori, soldi: viewSoldi, materiali: viewMateriali, riepilogo: viewRiepilogo };
