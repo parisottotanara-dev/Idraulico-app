@@ -236,3 +236,6 @@ body.kb #tabs, body.kb #fab{display:none!important}
 .item.todo.done .tick{background:var(--green);border-color:var(--green)}
 .item.todo.done .t{text-decoration:line-through;color:var(--muted)}
 .small-btn{padding:7px 10px;font-size:13px;flex:none}
+.sw-dup{right:92px;background:#5d6b80}
+@keyframes flash{from{background:var(--accent-soft)}}
+.sw-front.flash{animation:flash 1.6s ease-out}

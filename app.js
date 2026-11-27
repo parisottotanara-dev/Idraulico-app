@@ -184,7 +184,8 @@ function flowItem(f) {
 function matItem(m, showJob = true) {
   const j = m.jobId && getJob(m.jobId);
   return `<div class="swipe"><button class="sw-act sw-right" data-a="delMat" data-id="${m.id}" tabindex="-1">${ICON.trash}<span>Elimina</span></button>
-    <button class="item sw-front" data-a="editMat" data-id="${m.id}">
+    <button class="sw-act sw-right sw-dup" data-a="dupMat" data-id="${m.id}" tabindex="-1">${ICON.copy}<span>Duplica</span></button>
+    <button class="item sw-front${S.flash === m.id ? ' flash' : ''}" data-a="editMat" data-id="${m.id}">
     <div class="main"><div class="t">${esc(m.name)}${m.brand ? ` <span class="muted">· ${esc(m.brand)}</span>` : ''}</div>
       <div class="s">${esc(fmtDate(m.date))} · ${numIn(num(m.qty)) || 0} ${esc(m.unit || 'pz')} × ${eur(m.unitCost)}${showJob && j ? ' · ' + esc(j.title) : ''}</div></div>
     <div class="r num">${eur(matTotal(m))}</div></button></div>`;
@@ -194,6 +195,7 @@ function timerBanner() {
     `<button class="timerbar" data-a="openJob" data-id="${j.id}"><span class="pulse"></span><span style="flex:1">${esc(j.title)}</span><span data-timer="${j.id}">${fmtMin(jobMinutes(j))}</span></button>`).join('');
 }
 const ICON = {
+  copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/></svg>',
   share: '<svg viewBox="0 0 24 24"><path d="M12 15V3.5M8 7.5l4-4 4 4M5 11v8.5h14V11"/></svg>',
   download: '<svg viewBox="0 0 24 24"><path d="M12 3.5V15M8 11l4 4 4-4M5 19.5h14"/></svg>',
   calendar: '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
@@ -858,6 +860,14 @@ const A = {
     j.important = !j.important; save(); render();
     toast(j.important ? '★ Segnato come importante' : 'Tolto da importanti');
   },
+  dupMat: id => {
+    const m = getMat(id); if (!m) return;
+    closeSwipe();
+    const c = JSON.parse(JSON.stringify(m)); c.id = uid(); delete c.fromQuote;
+    db.materials.splice(db.materials.indexOf(m) + 1, 0, c); // subito dopo l'originale: compare sotto
+    save(); S.flash = c.id; render(); S.flash = null;
+    toast('Duplicato: tocca la copia per modificarla');
+  },
   delMat: async id => {
     const m = getMat(id); if (!m) return;
     closeSwipe();
@@ -920,6 +930,7 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', () =
 /* ===== Scorrimento delle righe dei lavori (come su iPhone) =====
    verso sinistra → Elimina, verso destra → Importante. Poi si tocca il pulsante comparso. */
 const SW = 92;
+const rightW = row => SW * Math.max(1, row.querySelectorAll('.sw-right').length); // es. Duplica + Elimina = 2 pulsanti
 let openSwipe = null, swipeBlockUntil = 0, drag = null;
 function setX(front, x, anim) { front.style.transition = anim ? 'transform .22s ease' : 'none'; front.style.transform = x ? `translateX(${x}px)` : ''; }
 function closeSwipe() { if (openSwipe) { setX(openSwipe, 0, true); openSwipe.parentElement.classList.remove('open-l', 'open-r'); openSwipe = null; } }
@@ -927,7 +938,7 @@ document.addEventListener('pointerdown', e => {
   const front = e.target.closest('.sw-front');
   if (!front || e.button > 0) return;
   if (openSwipe && openSwipe !== front) closeSwipe();
-  const start = openSwipe === front ? (front.parentElement.classList.contains('open-l') ? SW : -SW) : 0;
+  const start = openSwipe === front ? (front.parentElement.classList.contains('open-l') ? SW : -rightW(front.parentElement)) : 0;
   drag = { front, x0: e.clientX, y0: e.clientY, start, dx: 0, active: false, id: e.pointerId };
 });
 document.addEventListener('pointermove', e => {
@@ -942,7 +953,8 @@ document.addEventListener('pointermove', e => {
   const rowEl = drag.front.parentElement;
   if (!rowEl.querySelector('.sw-left')) x = Math.min(0, x);   // niente azione a sinistra (es. materiali)
   if (!rowEl.querySelector('.sw-right')) x = Math.max(0, x);
-  if (Math.abs(x) > SW) x = Math.sign(x) * (SW + (Math.abs(x) - SW) * 0.3); // un po' di resistenza
+  const lim = x < 0 ? rightW(rowEl) : SW;
+  if (Math.abs(x) > lim) x = Math.sign(x) * (lim + (Math.abs(x) - lim) * 0.3); // un po' di resistenza
   drag.dx = x;
   const row = drag.front.parentElement;
   row.classList.toggle('open-l', x > 0); row.classList.toggle('open-r', x < 0);
@@ -955,7 +967,7 @@ function endDrag(e) {
   swipeBlockUntil = Date.now() + 350;
   const row = d.front.parentElement;
   if (d.dx > SW / 2) { setX(d.front, SW, true); row.classList.add('open-l'); row.classList.remove('open-r'); openSwipe = d.front; }
-  else if (d.dx < -SW / 2) { setX(d.front, -SW, true); row.classList.add('open-r'); row.classList.remove('open-l'); openSwipe = d.front; }
+  else if (d.dx < -SW / 2) { setX(d.front, -rightW(row), true); row.classList.add('open-r'); row.classList.remove('open-l'); openSwipe = d.front; }
   else { setX(d.front, 0, true); row.classList.remove('open-l', 'open-r'); if (openSwipe === d.front) openSwipe = null; }
 }
 document.addEventListener('pointerup', endDrag);
