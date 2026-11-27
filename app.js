@@ -1,7 +1,7 @@
 'use strict';
 /* ================= Utility ================= */
 // Versione dell'app: deve essere uguale al contenuto di version.txt (va aumentata a ogni aggiornamento)
-const APP_VERSION = '20';
+const APP_VERSION = '21';
 const KEY = 'idraulico.data.v1';
 const $ = (s, r = document) => r.querySelector(s);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -186,7 +186,6 @@ function flowItem(f) {
 function matItem(m, showJob = true) {
   const j = m.jobId && getJob(m.jobId);
   return `<div class="swipe"><button class="sw-act sw-right" data-a="delMat" data-id="${m.id}" tabindex="-1">${ICON.trash}<span>Elimina</span></button>
-    <button class="sw-act sw-right sw-dup" data-a="dupMat" data-id="${m.id}" tabindex="-1">${ICON.copy}<span>Duplica</span></button>
     <button class="item sw-front${S.flash === m.id ? ' flash' : ''}" data-a="editMat" data-id="${m.id}">
     <div class="main"><div class="t">${esc(m.name)}${m.brand ? ` <span class="muted">· ${esc(m.brand)}</span>` : ''}</div>
       <div class="s">${esc(fmtDate(m.date))} · ${numIn(num(m.qty)) || 0} ${esc(m.unit || 'pz')} × ${eur(m.unitCost)}${showJob && j ? ' · ' + esc(j.title) : ''}</div></div>
