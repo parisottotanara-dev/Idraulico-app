@@ -1,5 +1,7 @@
 'use strict';
 /* ================= Utility ================= */
+// Versione dell'app: deve essere uguale al contenuto di version.txt (va aumentata a ogni aggiornamento)
+const APP_VERSION = '19';
 const KEY = 'idraulico.data.v1';
 const $ = (s, r = document) => r.querySelector(s);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -482,7 +484,7 @@ function viewRiepilogo() {
       <button class="btn full" data-a="exportCsv">Esporta movimenti per Excel (CSV)</button>
       <button class="btn danger full" data-a="wipe">Cancella tutti i dati</button>
     </div>
-    <p class="muted small" style="text-align:center">Agenda Idraulico · ${db.jobs.length} lavori · ${db.materials.length} materiali · ${db.moves.length} movimenti · ${db.quotes.length} preventivi</p>`
+    <p class="muted small" style="text-align:center">Agenda Idraulico · ${db.jobs.length} lavori · ${db.materials.length} materiali · ${db.moves.length} movimenti · ${db.quotes.length} preventivi<br>Versione ${APP_VERSION}</p>`
   };
 }
 const VIEWS = { agenda: viewAgenda, lavori: viewLavori, soldi: viewSoldi, materiali: viewMateriali, riepilogo: viewRiepilogo };
@@ -1031,6 +1033,27 @@ window.addEventListener('pageshow', () => refreshIfNeeded(false));
 setInterval(() => refreshIfNeeded(false), 60000);
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+/* Aggiornamento automatico: se l'app viene ripresa dal multitasking l'iPhone non la ricarica,
+   quindi controlla se online c'è una versione nuova e, se c'è, si ricarica da sola (i dati restano). */
+let lastUpdCheck = 0;
+async function checkUpdate(force) {
+  if (!navigator.onLine || (!force && Date.now() - lastUpdCheck < 60000)) return;
+  lastUpdCheck = Date.now();
+  try {
+    const r = await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const v = (await r.text()).trim();
+    if (v && v !== APP_VERSION) {
+      const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+      if (reg) await reg.update().catch(() => {});
+      const go = () => { if (document.querySelector('.sheet-wrap, .ask-wrap')) return setTimeout(go, 3000); location.reload(); };
+      toast('Aggiornamento dell\'app…'); setTimeout(go, 800);
+    }
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
+setInterval(() => { if (!document.hidden) checkUpdate(); }, 30 * 60000);
+setTimeout(() => checkUpdate(true), 3000);
 render();
 try { localStorage.removeItem('idraulico.draft.v1'); } catch (e) {}
 recover();
