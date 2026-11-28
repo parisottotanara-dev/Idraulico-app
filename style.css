@@ -16,7 +16,7 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--text)}
 body{font:16px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
-  padding-bottom:calc(var(--tabh) + var(--safe-b) + 90px);-webkit-text-size-adjust:100%}
+  -webkit-text-size-adjust:100%}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 
@@ -241,3 +241,13 @@ body.kb #tabs, body.kb #fab{display:none!important}
 .sw-front.flash{animation:flash 1.6s ease-out}
 /* Niente zoom con doppio tocco e niente "rimbalzo" della pagina che spostava la barra in basso */
 html,body{touch-action:manipulation;overscroll-behavior:none}
+
+/* ===== Struttura "da app": titolo e barra fermi, scorre solo il contenuto =====
+   (su iPhone le barre position:fixed su una pagina che scorre a volte finivano a metà schermo) */
+html,body{height:100%;overflow:hidden}
+body{display:flex;flex-direction:column;height:100vh;height:100dvh;padding-bottom:0!important}
+#top{position:relative;flex:none;background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}
+main{flex:1 1 auto;min-height:0;width:100%;max-width:none;margin:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+  padding:4px max(16px,calc((100% - 688px)/2)) calc(var(--tabh) + 40px)}
+#tabs{position:relative;left:auto;right:auto;bottom:auto;flex:none;background:var(--card);backdrop-filter:none;-webkit-backdrop-filter:none}
+#fab{bottom:calc(var(--tabh) + var(--safe-b) + 16px)}

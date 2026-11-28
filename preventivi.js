@@ -497,7 +497,7 @@ function addQuoteMaterials(j) {
 Object.assign(A, {
   lavMode: id => { S.lavMode = id; render(); },
   qFilter: id => { S.qf = id; render(); },
-  openQuote: id => { S.quoteId = id; render(); scrollTo(0, 0); },
+  openQuote: id => { S.quoteId = id; render(); toTop(); },
   editQuote: id => quoteForm(getQuote(id)),
   bizForm: () => bizForm(),
   qStatus: v => { const [id, st] = v.split(':'); const q = getQuote(id); if (q) { q.status = st; save(); render(); } },

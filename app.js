@@ -1,7 +1,7 @@
 'use strict';
 /* ================= Utility ================= */
 // Versione dell'app: deve essere uguale al contenuto di version.txt (va aumentata a ogni aggiornamento)
-const APP_VERSION = '23';
+const APP_VERSION = '24';
 const KEY = 'idraulico.data.v1';
 const $ = (s, r = document) => r.querySelector(s);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -786,11 +786,13 @@ const stamp = () => today();
 function csvCell(v) { const s = String(v ?? ''); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
 
 /* ================= Azioni ================= */
+/** Torna in cima al contenuto (scorre solo il riquadro centrale, non la pagina) */
+function toTop() { const m = $('#main'); if (m) m.scrollTop = 0; }
 const shiftMonth = (y, m, d) => { const t = new Date(y, m + d, 1); return [t.getFullYear(), t.getMonth()]; };
 const A = {
-  tab: id => { S.tab = id; S.jobId = null; S.quoteId = null; S.recap = null; render(); scrollTo(0, 0); },
+  tab: id => { S.tab = id; S.jobId = null; S.quoteId = null; S.recap = null; render(); toTop(); },
   back: () => { if (S.quoteId) S.quoteId = null; else if (S.jobId) S.jobId = null; else S.recap = null; render(); },
-  openJob: id => { S.jobId = id; S.quoteId = null; render(); scrollTo(0, 0); },
+  openJob: id => { S.jobId = id; S.quoteId = null; render(); toTop(); },
   fab: () => {
     if (S.tab === 'lavori' && S.lavMode === 'preventivi') quoteForm();
     else if (S.tab === 'agenda' || S.tab === 'lavori') chooseCreate();
@@ -921,12 +923,11 @@ document.addEventListener('focusout', () => {
   kbTimer = setTimeout(() => {
     if (isField(document.activeElement)) return;
     document.body.classList.remove('kb');
-    window.scrollTo(window.scrollX, window.scrollY); // fa ricalcolare la posizione delle barre
+    window.scrollTo(0, 0); // la tastiera dell'iPhone può spostare tutta la pagina: la rimette a posto
   }, 120);
 });
-if (window.visualViewport) window.visualViewport.addEventListener('resize', () => {
-  const t = $('#tabs'); t.style.display = 'none'; void t.offsetHeight; t.style.display = '';
-});
+// La pagina intera non deve mai scorrere (scorre solo il contenuto in mezzo)
+window.addEventListener('scroll', () => { if (!isField(document.activeElement) && (window.scrollY || window.scrollX)) window.scrollTo(0, 0); }, { passive: true });
 
 /* ===== Scorrimento delle righe dei lavori (come su iPhone) =====
    verso sinistra → Elimina, verso destra → Importante. Poi si tocca il pulsante comparso. */
@@ -973,7 +974,7 @@ function endDrag(e) {
 }
 document.addEventListener('pointerup', endDrag);
 document.addEventListener('pointercancel', endDrag);
-document.addEventListener('scroll', () => closeSwipe(), { passive: true });
+document.addEventListener('scroll', () => closeSwipe(), { passive: true, capture: true }); // anche lo scorrimento del contenuto
 
 // Aggiorna i conti quando ha finito di scrivere il tempo (non mentre passa da Ore a Minuti)
 document.addEventListener('change', e => {

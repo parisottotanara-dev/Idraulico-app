@@ -372,7 +372,7 @@ Object.assign(A, {
   openRecap: v => {
     const [kind, key] = v.split(':');
     if (key) notifS().seen[key] = 1, save();
-    S.recap = kind; S.jobId = null; S.quoteId = null; render(); scrollTo(0, 0);
+    S.recap = kind; S.jobId = null; S.quoteId = null; render(); toTop();
   },
   shareRecap: async kind => {
     const t = recapText(kind);
