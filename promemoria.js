@@ -32,32 +32,48 @@ const jobRems = j => Array.isArray(j.reminders) ? j.reminders : notifS().default
 function jobStart(j) { const [y, m, d] = j.date.split('-').map(Number); const [h, mi] = (j.time || '08:00').split(':').map(Number); return new Date(y, m - 1, d, h, mi); }
 
 /* ---------- Scelta dei promemoria nel modulo del lavoro ---------- */
-function remChips(j) {
-  const sel = jobRems(j);
-  const all = [...new Set(REM_OPTS.map(o => o[0]).concat(sel))].sort((a, b) => a - b);
-  return all.map(m => `<label class="chipbox"><input type="checkbox" name="rem_${m}" ${sel.includes(m) ? 'checked' : ''}><span>${esc(remLabel(m))}</span></label>`).join('');
+// Scelte sempre visibili; le altre stanno nel menu "Altro…"
+const REM_MAIN = [0, 60, 1440, 10080];
+function remChips(j, selOverride) {
+  const sel = selOverride || jobRems(j);
+  const all = [...new Set(REM_MAIN.concat(sel))].sort((a, b) => a - b); // un promemoria scelto dal menu resta visibile
+  return `<label class="chipbox"><input type="checkbox" name="remnone" ${sel.length ? '' : 'checked'}><span>🔕 Nessun avviso</span></label>`
+    + all.map(m => `<label class="chipbox"><input type="checkbox" name="rem_${m}" ${sel.includes(m) ? 'checked' : ''}><span>${esc(remLabel(m))}</span></label>`).join('');
+}
+function remMoreOptions() {
+  return `<option value="">Altro…</option>${REM_OPTS.filter(o => !REM_MAIN.includes(o[0])).map(([m, l]) => `<option value="${m}">${esc(l)}</option>`).join('')}<option value="custom">Personalizzato…</option>`;
 }
 function remField(j) {
   return `<div class="sec" style="margin:18px 0 8px">Promemoria</div>
     <div class="chips" id="remChips">${remChips(j)}</div>
-    <div class="row" style="align-items:flex-end;margin-top:8px">
-      <label style="margin:0">Altro: quanto prima<input id="remN" inputmode="numeric" placeholder="es. 3"></label>
+    <label style="margin:10px 0 0"><select id="remMore">${remMoreOptions()}</select></label>
+    <div class="row" id="remCustom" hidden style="align-items:flex-end;margin-top:8px">
+      <label style="margin:0">Quanto prima<input id="remN" inputmode="numeric" placeholder="es. 3"></label>
       <label style="margin:0"><select id="remU"><option value="1440">giorni</option><option value="60">ore</option><option value="1">minuti</option><option value="10080">settimane</option></select></label>
       <button type="button" class="btn" id="remAdd" style="flex:0 0 auto;min-height:46px">Aggiungi</button></div>
-    <p class="muted small" style="margin:8px 0 12px">Per ricevere gli avvisi anche ad app chiusa, dopo aver salvato tocca <b>"Aggiungi al Calendario"</b> nella scheda del lavoro.</p>`;
+    <p class="muted small" style="margin:8px 0 12px">Quando tocchi "Fine" l'app ti propone di metterlo nel <b>Calendario dell'iPhone</b>, che ti avviserà anche ad app chiusa.</p>`;
 }
 function readRems(d) { return Object.keys(d).filter(k => /^rem_\d+$/.test(k) && d[k]).map(k => +k.slice(4)).sort((a, b) => a - b); }
 function initRemField(f, j) {
-  const add = f.querySelector('#remAdd'); if (!add) return;
-  add.addEventListener('click', () => {
+  const box = f.querySelector('#remChips'); if (!box) return;
+  const redraw = sel => { box.innerHTML = remChips(j, sel); f.dispatchEvent(new Event('change')); };
+  const addRem = m => { const cur = readRems(readForm(f)); if (!cur.includes(m)) cur.push(m); redraw(cur); };
+  // "Nessun avviso" toglie tutti gli altri; scegliere un avviso toglie "Nessun avviso"
+  box.addEventListener('change', e => {
+    const t = e.target;
+    if (t.name === 'remnone') { if (t.checked) box.querySelectorAll('input[name^="rem_"]').forEach(x => { x.checked = false; }); else if (!readRems(readForm(f)).length) t.checked = true; }
+    else if (/^rem_\d+$/.test(t.name)) box.querySelector('[name=remnone]').checked = !readRems(readForm(f)).length;
+  });
+  const more = f.querySelector('#remMore'), custom = f.querySelector('#remCustom');
+  more.addEventListener('change', () => {
+    const v = more.value; more.value = '';
+    if (v === 'custom') { custom.hidden = false; f.querySelector('#remN').focus(); return; }
+    if (v) addRem(+v);
+  });
+  f.querySelector('#remAdd').addEventListener('click', () => {
     const n = Math.round(num(f.querySelector('#remN').value)); if (n <= 0) return;
-    const m = n * +f.querySelector('#remU').value;
-    const cur = readRems(readForm(f));
-    if (!cur.includes(m)) cur.push(m);
-    j.reminders = cur;
-    f.querySelector('#remChips').innerHTML = remChips(j);
-    f.querySelector('#remN').value = '';
-    f.dispatchEvent(new Event('change'));
+    addRem(n * +f.querySelector('#remU').value);
+    f.querySelector('#remN').value = ''; custom.hidden = true;
   });
 }
 
