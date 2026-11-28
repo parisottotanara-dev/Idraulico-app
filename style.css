@@ -239,3 +239,5 @@ body.kb #tabs, body.kb #fab{display:none!important}
 .sw-dup{right:92px;background:#5d6b80}
 @keyframes flash{from{background:var(--accent-soft)}}
 .sw-front.flash{animation:flash 1.6s ease-out}
+/* Niente zoom con doppio tocco e niente "rimbalzo" della pagina che spostava la barra in basso */
+html,body{touch-action:manipulation;overscroll-behavior:none}

@@ -1,7 +1,7 @@
 'use strict';
 /* ================= Utility ================= */
 // Versione dell'app: deve essere uguale al contenuto di version.txt (va aumentata a ogni aggiornamento)
-const APP_VERSION = '22';
+const APP_VERSION = '23';
 const KEY = 'idraulico.data.v1';
 const $ = (s, r = document) => r.querySelector(s);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1031,6 +1031,10 @@ window.addEventListener('focus', () => refreshIfNeeded(false));
 window.addEventListener('pageshow', () => refreshIfNeeded(false));
 setInterval(() => refreshIfNeeded(false), 60000);
 
+/* Niente zoom: su iPhone Safari a volte ignora l'impostazione della pagina, quindi blocca anche
+   il gesto con due dita. Con lo zoom le barre fisse (quella in basso) finivano a metà schermo. */
+['gesturestart', 'gesturechange', 'gestureend'].forEach(ev => document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
+document.addEventListener('touchmove', e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, { passive: false });
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 /* Aggiornamento automatico: se l'app viene ripresa dal multitasking l'iPhone non la ricarica,
    quindi controlla se online c'è una versione nuova e, se c'è, si ricarica da sola (i dati restano). */
